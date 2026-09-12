@@ -38,6 +38,8 @@ The Lambda reads these from its runtime environment (`process.env`). Values are 
 | `GMAIL_CLIENT_ID`      | Google OAuth2 client ID for the Gmail API    | ✓        |
 | `GMAIL_CLIENT_SECRET`  | Google OAuth2 client secret                  | ✓        |
 | `GMAIL_REFRESH_TOKEN`  | Offline refresh token for Gmail API access   | ✓        |
+| `MAIL_FROM`            | SES sender address (verified identity)       | ✓        |
+| `MAIL_TO`              | Recipient address for the SOA PDF            | ✓        |
 
 ## Deploy Parameters
 
@@ -58,6 +60,27 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 | `GmailClientId`   | —                                | Google OAuth2 client ID        |
 | `GmailClientSecret` | —                            | NoEcho (secret), required      |
 | `GmailRefreshToken` | —                           | NoEcho (secret), required      |
+| `MailFrom`          | —                            | Verified SES identity          |
+| `MailTo`            | —                            | Recipient email                |
+
+## Emailing the SOA PDF (AWS SES)
+
+The unlocked PDF is emailed by the Lambda itself using **AWS SES** (`SendRawEmail`
+with a MIME attachment), so no SMTP app passwords are needed. The function's IAM
+role is granted `ses:SendRawEmail` in `template.yaml`.
+
+Setup in AWS Console (SES):
+
+1. Verify the `MailFrom` sender address as a SES identity.
+2. SES starts in **sandbox** mode: you can only send to verified recipients
+   (make sure `MailTo` is verified too) and sending limits are low. Request
+   production access (`SES > Account dashboard > Request production access`) to
+   lift the sandbox restrictions.
+3. If your `MailFrom` domain differs from the address, set up DKIM/DMARC
+   optionally.
+
+The scheduled EventBridge rule (25th of each month) triggers the whole pipeline
+automatically; the GitHub Actions workflow only deploys.
 
 ## Prerequisites
 

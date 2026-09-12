@@ -46,4 +46,6 @@ jobs:
                SoaBucketName=${{ vars.SOA_BUCKET_NAME }} \
                GmailClientId=${{ secrets.GMAIL_CLIENT_ID }} \
                GmailClientSecret=${{ secrets.GMAIL_CLIENT_SECRET }} \
-               GmailRefreshToken=${{ secrets.GMAIL_REFRESH_TOKEN }}"
+               GmailRefreshToken=${{ secrets.GMAIL_REFRESH_TOKEN }} \
+               MailFrom=${{ secrets.MAIL_FROM }} \
+               MailTo=${{ vars.MAIL_TO }}"
