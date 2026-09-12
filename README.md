@@ -33,6 +33,8 @@ The Lambda reads these from its runtime environment (`process.env`). Values are 
 | `USER_MOBILE`          | Registered mobile number used for OTP        | ✓        |
 | `CONVERGE_API_URL`     | Base URL of the Converge SOA API             | ✓        |
 | `SOA_BUCKET_NAME`      | S3 bucket where downloaded SOA PDFs go       | ✓        |
+| `PDF_PASSWORD`         | Password that unlocks the SOA PDF            | ✓        |
+| `CONVERGE_ACCOUNT_NO`  | Converge account number for the SOA flow     | ✓        |
 
 ## Deploy Parameters
 
@@ -46,6 +48,8 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 | `CodeUri`         | `./src`                          |                                |
 | `UserEmail`       | —                                | NoEcho (secret), required      |
 | `UserMobile`      | —                                | NoEcho (secret), required      |
+| `PdfPassword`     | —                                | NoEcho (secret), required      |
+| `ConvergeAccountNo` | —                              | Required                       |
 | `ConvergeApiUrl`  | `https://get-soa.convergeict.com/api/v1/account` |                          |
 | `SoaBucketName`   | —                                | Must be globally unique        |
 

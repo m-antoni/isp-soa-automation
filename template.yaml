@@ -48,6 +48,18 @@ Parameters:
     NoEcho: true
     Description: Registered mobile number for OTP verification.
 
+  # Password used to unlock the password-protected SOA PDF.
+  # Kept secret with NoEcho - never shown in stack outputs or logs.
+  PdfPassword:
+    Type: String
+    NoEcho: true
+    Description: Password that unlocks the downloaded SOA PDF.
+
+  # Converge customer account number used in the SOA API calls.
+  ConvergeAccountNo:
+    Type: String
+    Description: Converge account number for the SOA retrieval flow.
+
 # Base URL of the Converge SOA API; environment-specific endpoints override this.
   ConvergeApiUrl:
     Type: String
@@ -98,6 +110,8 @@ Resources:
           USER_MOBILE: !Ref UserMobile
           CONVERGE_API_URL: !Ref ConvergeApiUrl
           SOA_BUCKET_NAME: !Ref SoaBucket
+          PDF_PASSWORD: !Ref PdfPassword
+          CONVERGE_ACCOUNT_NO: !Ref ConvergeAccountNo
 
       # IAM policies attached to the auto-created execution role.
       # Repo-specific inline policy in place of the generic AWSLambdaBasicExecutionRole:

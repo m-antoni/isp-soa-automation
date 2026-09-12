@@ -31,6 +31,8 @@
 #   Environment       : Deployment stage, only used for resource tags.
 #   UserEmail         : Destination email for the unlocked SOA PDF (NoEcho).
 #   UserMobile        : Registered mobile number used for OTP (NoEcho).
+#   PdfPassword       : Password that unlocks the downloaded SOA PDF (NoEcho).
+#   ConvergeAccountNo : Converge account number used in the SOA API flow.
 #   ConvergeApiUrl    : Base URL of the Converge SOA API.
 #   SoaBucketName     : Name of the SOA PDF S3 bucket. This bucket IS defined in
 #                       template.yaml (created by CloudFormation on deploy).
@@ -52,4 +54,4 @@ stack_name = "isp-soa-automation"
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = false
 s3_bucket = "YOUR_SAM_PACKAGING_BUCKET_NAME"
-parameter_overrides = "Environment=dev UserEmail=YOUR_EMAIL UserMobile=YOUR_MOBILE ConvergeApiUrl=https://get-soa.convergeict.com/api/v1/account SoaBucketName=YOUR_GLOBALLY_UNIQUE_BUCKET_NAME"
+parameter_overrides = "Environment=dev UserEmail=YOUR_EMAIL UserMobile=YOUR_MOBILE ConvergeApiUrl=https://get-soa.convergeict.com/api/v1/account SoaBucketName=YOUR_GLOBALLY_UNIQUE_BUCKET_NAME PdfPassword=YOUR_PDF_PASSWORD ConvergeAccountNo=YOUR_ACCOUNT_NO"
