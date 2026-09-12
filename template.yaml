@@ -78,12 +78,15 @@ Parameters:
 
   # SES sender/recipient for emailing the unlocked SOA PDF.
   # MAIL_FROM must be a verified identity in AWS SES.
+  # Defaults keep deploys working even when overrides omit these params.
   MailFrom:
     Type: String
+    Default: michaelantoni.tech@gmail.com
     Description: Sender address (verified in AWS SES) for the SOA email.
 
   MailTo:
     Type: String
+    Default: michaelantoni.tech@gmail.com
     Description: Recipient address for the unlocked SOA PDF.
 
 # Base URL of the Converge SOA API; environment-specific endpoints override this.
