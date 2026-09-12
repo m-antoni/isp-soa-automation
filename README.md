@@ -19,9 +19,35 @@ Built with the AWS Serverless Application Model (SAM):
 ├── samconfig.toml.example   # Committable template; copy to samconfig.toml
 ├── src/                     # Lambda function source (ESM, Node 22)
 │   ├── index.mjs            # Handler entry point (index.handler)
+│   ├── gmail.mjs            # Gmail OAuth2 + OTP retrieval
 │   └── package.json         # Lambda runtime dependencies
 └── events/event.json        # Sample payload for local invocation
 ```
+
+## Lambda Dependencies (`src/package.json`)
+
+These are the runtime packages bundled with the function. `sam build` installs them from `src/package.json` into the deployment package.
+
+| Package                        | Purpose                                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `@aws-sdk/client-s3`           | Uploads the unlocked SOA PDF to the staging bucket (`PutObjectCommand`).                                                             |
+| `@aws-sdk/signature-v4`        | Computes the SigV4 signature for the SES `SendRawEmail` HTTP request.                                                                |
+| `@smithy/protocol-http`        | Provides the `HttpRequest` object the signer and `fetch` work against.                                                               |
+| `@aws-sdk/credential-providers`| `fromNodeProviderChain()` resolves the Lambda IAM role credentials (falls back to `~/.aws` locally) for signing.                      |
+| `@aws-crypto/sha256-js`        | Pure-JS SHA-256 used by SigV4 to hash the request payload and canonical headers.                                                      |
+| `@neslinesli93/qpdf-wasm`      | qpdf compiled to WebAssembly; decrypts the password-protected SOA PDF (`--password=X --decrypt`).                                    |
+| `pdf-lib`                      | Validates the decrypted PDF (parses it back) and generates the earlier MIME attachment.                                               |
+
+Why no `@aws-sdk/client-ses`? The current SDK generation's Query-protocol serializer
+silently drops `RawMessage.Data`, so SES rejects the email with
+`rawMessage: Member must not be null`. The Lambda therefore builds and SigV4-signs
+the `SendRawEmail` request by hand (`sendPdfEmail` in `src/index.mjs`) instead of
+using the SES client — removing the dependency also shrinks the bundle.
+
+Why not `pdf-lib` for unlocking? pdf-lib cannot decrypt password-protected PDFs at
+all; it throws `EncryptedPDFError` for any encrypted document, regardless of the
+password. `@neslinesli93/qpdf-wasm` handles real decryption (RC4, AES-128 and
+AES-256) and leaves the PDF content streams intact.
 
 ## Environment Variables
 
@@ -66,8 +92,10 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 ## Emailing the SOA PDF (AWS SES)
 
 The unlocked PDF is emailed by the Lambda itself using **AWS SES** (`SendRawEmail`
-with a MIME attachment), so no SMTP app passwords are needed. The function's IAM
-role is granted `ses:SendRawEmail` in `template.yaml`.
+with a MIME attachment), so no SMTP app passwords are needed. The request is built
+and SigV4-signed by the Lambda directly (see "Lambda Dependencies" for why the SES
+client is not used). The function's IAM role is granted `ses:SendRawEmail` in
+`template.yaml`.
 
 Setup in AWS Console (SES):
 
