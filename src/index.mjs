@@ -193,7 +193,12 @@ async function fetchOtpFromGmail() {
         )}`,
         { headers }
       );
-      if (!listRes.ok) continue;
+      if (!listRes.ok) {
+        console.error(
+          `Gmail search failed (status ${listRes.status}): ${await listRes.text()}`
+        );
+        continue;
+      }
 
       const { messages = [] } = await listRes.json();
       if (messages.length === 0) continue;
