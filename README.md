@@ -87,6 +87,10 @@ Guide for setting up Google OAuth 2.0 credentials and generating a long-lived `R
      ```
 5. Click **Create** and save your `Client ID` and `Client Secret`.
 
+> **Tip:** The **Gmail API must be enabled on the project the OAuth client belongs to**, otherwise calls fail with `403` / `SERVICE_DISABLED`. You can verify (and enable) it here, substituting your project ID:
+> [`https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=<PROJECT_ID>`](https://console.developers.google.com/apis/api/gmail.googleapis.com/overview)
+> After enabling, wait a few minutes for the change to propagate before re-running the Lambda.
+
 ### 2. Generating the Refresh Token
 
 1. Open [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/).
