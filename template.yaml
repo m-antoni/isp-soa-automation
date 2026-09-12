@@ -60,6 +60,22 @@ Parameters:
     Type: String
     Description: Converge account number for the SOA retrieval flow.
 
+  # Gmail API (OAuth2) credentials used to read the OTP email.
+  # Client ID is not secret; Secret and Refresh Token are NoEcho.
+  GmailClientId:
+    Type: String
+    Description: Google OAuth2 client ID for the Gmail API.
+
+  GmailClientSecret:
+    Type: String
+    NoEcho: true
+    Description: Google OAuth2 client secret for the Gmail API.
+
+  GmailRefreshToken:
+    Type: String
+    NoEcho: true
+    Description: Offline refresh token that mints Gmail API access tokens.
+
 # Base URL of the Converge SOA API; environment-specific endpoints override this.
   ConvergeApiUrl:
     Type: String
@@ -112,6 +128,9 @@ Resources:
           SOA_BUCKET_NAME: !Ref SoaBucket
           PDF_PASSWORD: !Ref PdfPassword
           CONVERGE_ACCOUNT_NO: !Ref ConvergeAccountNo
+          GMAIL_CLIENT_ID: !Ref GmailClientId
+          GMAIL_CLIENT_SECRET: !Ref GmailClientSecret
+          GMAIL_REFRESH_TOKEN: !Ref GmailRefreshToken
 
       # IAM policies attached to the auto-created execution role.
       # Repo-specific inline policy in place of the generic AWSLambdaBasicExecutionRole:

@@ -43,4 +43,7 @@ jobs:
                PdfPassword=${{ secrets.PDF_PASSWORD }} \
                ConvergeAccountNo=${{ secrets.CONVERGE_ACCOUNT_NO }} \
                ConvergeApiUrl=${{ vars.CONVERGE_API_URL }} \
-               SoaBucketName=${{ vars.SOA_BUCKET_NAME }}"
+               SoaBucketName=${{ vars.SOA_BUCKET_NAME }} \
+               GmailClientId=${{ secrets.GMAIL_CLIENT_ID }} \
+               GmailClientSecret=${{ secrets.GMAIL_CLIENT_SECRET }} \
+               GmailRefreshToken=${{ secrets.GMAIL_REFRESH_TOKEN }}"

@@ -35,6 +35,9 @@ The Lambda reads these from its runtime environment (`process.env`). Values are 
 | `SOA_BUCKET_NAME`      | S3 bucket where downloaded SOA PDFs go       | ✓        |
 | `PDF_PASSWORD`         | Password that unlocks the SOA PDF            | ✓        |
 | `CONVERGE_ACCOUNT_NO`  | Converge account number for the SOA flow     | ✓        |
+| `GMAIL_CLIENT_ID`      | Google OAuth2 client ID for the Gmail API    | ✓        |
+| `GMAIL_CLIENT_SECRET`  | Google OAuth2 client secret                  | ✓        |
+| `GMAIL_REFRESH_TOKEN`  | Offline refresh token for Gmail API access   | ✓        |
 
 ## Deploy Parameters
 
@@ -52,12 +55,62 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 | `ConvergeAccountNo` | —                              | Required                       |
 | `ConvergeApiUrl`  | `https://get-soa.convergeict.com/api/v1/account` |                          |
 | `SoaBucketName`   | —                                | Must be globally unique        |
+| `GmailClientId`   | —                                | Google OAuth2 client ID        |
+| `GmailClientSecret` | —                            | NoEcho (secret), required      |
+| `GmailRefreshToken` | —                           | NoEcho (secret), required      |
 
 ## Prerequisites
 
 - AWS CLI (`aws configure`)
 - AWS SAM CLI
 - Node.js 22 (for local testing)
+
+## Google OAuth 2.0 & Refresh Token Setup
+
+Guide for setting up Google OAuth 2.0 credentials and generating a long-lived `REFRESH_TOKEN` for programmatic Gmail access. The Lambda uses it to read the Converge OTP from your inbox.
+
+---
+
+### 1. Google Cloud Console Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project (or select an existing one) and enable the **Gmail API**.
+3. Configure the **OAuth consent screen**:
+   - Set User Type to **External**.
+   - Add your Gmail address under **Audience / Test users**.
+4. Go to **Credentials > + Create Credentials > OAuth client ID**:
+   - Select **Web application** as the application type.
+   - Add the following to **Authorised redirect URIs**:
+     ```text
+     https://oauth.pstmn.io/v1/browser-callback
+     https://developers.google.com/oauthplayground
+     ```
+5. Click **Create** and save your `Client ID` and `Client Secret`.
+
+### 2. Generating the Refresh Token
+
+1. Open [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/).
+2. Click the **Gear Icon (⚙️)** in the top-right corner.
+3. Check **Use your own OAuth credentials** and enter your `Client ID` and `Client Secret`.
+4. Under **Step 1 (Select & authorize APIs)**, enter the required scope in the text box:
+   ```text
+   https://www.googleapis.com/auth/gmail.readonly
+   ```
+5. Click **Authorize APIs**, select your test Gmail account, and grant permissions.
+6. In **Step 2 (Exchange authorization code for tokens)**, click **Exchange authorization code for tokens**.
+7. Copy the generated `refresh_token` from the response body.
+
+### 3. Environment Configuration
+
+Store these credentials securely in your environment (`.env` or AWS Lambda environment variables):
+
+```env
+GMAIL_CLIENT_ID="your-client-id"
+GMAIL_CLIENT_SECRET="your-client-secret"
+GMAIL_REFRESH_TOKEN="1//04..."
+```
+
+Wire them into deployment as the `GmailClientId`, `GmailClientSecret`, and `GmailRefreshToken` parameters (see Environment Variables / Deploy Parameters above).
 
 ## Configuration
 
