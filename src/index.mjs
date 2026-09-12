@@ -75,9 +75,21 @@ export const handler = async (event, context) => {
       console.log("SOA PDF BYTES", soaBuffer.length);
 
       // Step 5: Unlock the encrypted PDF loaded with the account password.
-      const pdfDoc = await PDFDocument.load(new Uint8Array(soaBuffer), {
-        password: config.PDF_PASSWORD,
-      });
+      let pdfDoc;
+      try {
+        pdfDoc = await PDFDocument.load(new Uint8Array(soaBuffer), {
+          password: config.PDF_PASSWORD,
+        });
+      } catch (error) {
+        console.error(
+          "FAILED TO UNLOCK PDF",
+          JSON.stringify(inspectPdfEncryption(soaBuffer))
+        );
+        throw new Error(
+          `Unable to open the SOA PDF with PDF_PASSWORD: ${error.message}`,
+          { cause: error }
+        );
+      }
       const unlockedBytes = await pdfDoc.save();
       console.log("UNLOCKED PDF BYTES", unlockedBytes.length);
 
@@ -214,6 +226,34 @@ function soaFileNames() {
     month: `${yyyy}-${mm}`,
     fileName: `SOA-${yyyy}-${mm}-15.pdf`,
   };
+}
+
+// ** Pull minimal encryption metadata out of a PDF so unlock failures can be
+// diagnosed: wrong PDF_PASSWORD vs an encryption pdf-lib cannot handle
+// (e.g. AES-256 /V 5, /R 5 or 6).
+function inspectPdfEncryption(bytes) {
+  const body = Buffer.from(bytes).toString("latin1");
+  const encryptMatch = body.match(/\/Encrypt\s+(\d+)\s+(\d+)\s+R/);
+  const details = {
+    header: Buffer.from(bytes)
+      .subarray(0, 16)
+      .toString("latin1")
+      .replace(/[^\x20-\x7e]/g, "."),
+    hasEncryptDict: Boolean(encryptMatch),
+  };
+
+  if (encryptMatch) {
+    details.encryptObj = Number(encryptMatch[1]);
+    const filter = body.match(/\/Filter\s+\/(\w+)/);
+    if (filter) details.filter = filter[1];
+    const v = body.match(/\/V\s+(\d+)/);
+    if (v) details.version = Number(v[1]);
+    const r = body.match(/\/R\s+(\d+)/);
+    if (r) details.revision = Number(r[1]);
+    if (body.includes("/AESV3")) details.cf = "AESV3";
+    else if (body.includes("/AESV2")) details.cf = "AESV2";
+  }
+  return details;
 }
 
 // ** Build a MIME multipart/mixed message with the SOA PDF as an attachment.
