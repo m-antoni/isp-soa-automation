@@ -1,11 +1,13 @@
 import { PDFDocument } from "pdf-lib";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { SESClient, SendRawEmailCommand } from "@aws-sdk/client-ses";
+import { SignatureV4 } from "@aws-sdk/signature-v4";
+import { HttpRequest } from "@smithy/protocol-http";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { Sha256 } from "@aws-crypto/sha256-js";
 import createQpdfModule from "@neslinesli93/qpdf-wasm";
 import { fetchOtpFromGmail } from "./gmail.mjs";
 
 const s3 = new S3Client({});
-const ses = new SESClient({});
 
 // pdf-lib cannot decrypt password-protected PDFs, so we use qpdf (WASM).
 // The module is loaded once per container; FS is in-memory (MEMFS).
@@ -339,6 +341,9 @@ function buildMimeMessage({ to, from, subject, body, fileName, pdfBuffer }) {
 }
 
 // ** Send the unlocked SOA PDF via SES (SendRawEmail supports attachments).
+// Uses a hand-rolled AWS Query request: the AWS SDK v3 Query-protocol
+// serializer currently drops `RawMessage.Data` ("Member must not be null"),
+// so we build + SigV4-sign the request ourselves.
 async function sendPdfEmail({ fileName, buffer }) {
   const raw = buildMimeMessage({
     to: config.MAIL_TO,
@@ -349,6 +354,49 @@ async function sendPdfEmail({ fileName, buffer }) {
     pdfBuffer: buffer,
   });
 
-  await ses.send(new SendRawEmailCommand({ Raw: { Data: raw } }));
-  console.log("EMAIL SENT VIA SES", fileName);
+  const region = process.env.AWS_REGION ?? "ap-southeast-1";
+  const host = `email.${region}.amazonaws.com`;
+  const queryBody = [
+    "Action=SendRawEmail",
+    "Version=2010-12-01",
+    `RawMessage.Data=${encodeURIComponent(raw.toString("base64"))}`,
+  ].join("&");
+
+  const request = new HttpRequest({
+    method: "POST",
+    protocol: "https:",
+    hostname: host,
+    path: "/",
+    headers: {
+      host,
+      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+    },
+    body: queryBody,
+  });
+
+  const signer = new SignatureV4({
+    credentials: fromNodeProviderChain(),
+    region,
+    service: "ses",
+    sha256: Sha256,
+  });
+  const signed = await signer.sign(request);
+
+  const response = await fetch(`https://${host}/`, {
+    method: "POST",
+    headers: signed.headers,
+    body: signed.body,
+  });
+  const xml = await response.text();
+
+  if (!response.ok) {
+    const code = /<Code>([^<]*)<\/Code>/.exec(xml)?.[1];
+    const message = /<Message>([^<]*)<\/Message>/.exec(xml)?.[1];
+    throw new Error(
+      `SES send failed (${code ?? response.status}): ${message ?? xml.slice(0, 400)}`
+    );
+  }
+
+  const messageId = /<MessageId>([^<]*)<\/MessageId>/.exec(xml)?.[1];
+  console.log("EMAIL SENT VIA SES", fileName, messageId ?? "");
 }
