@@ -1,0 +1,184 @@
+# SAM (Serverless Application Model) template.
+# AWS CloudFormation dialect that simplifies defining serverless resources.
+
+AWSTemplateFormatVersion: "2010-09-09" # CloudFormation template version (required boilerplate).
+Transform: AWS::Serverless-2016-10-31 # Marks this as a SAM template so Lambda resources get extra capabilities (packaging, IAM, etc.).
+Description: SAM template for the isp-soa-automation SOA retrieval and delivery pipeline
+
+# ---------------------------------------------------------------------------
+# Parameters
+# Inputs supplied at deploy time (sam build / sam deploy --parameter-overrides).
+# ---------------------------------------------------------------------------
+Parameters:
+  # Deployment stage. Used only for tagging below.
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+
+  # AWS Lambda runtime. Node 22 is the current LTS.
+  Runtime:
+    Type: String
+    Default: nodejs22.x
+
+  # Entry point SAM invokes: <file>.<exported function>.
+  # This expects src/index.js exporting a function named "handler".
+  Handler:
+    Type: String
+    Default: index.handler
+
+  # Location of the Lambda code, relative to the directory containing this template.
+  # In GitHub Actions you would set this to point at the build output, e.g. ./build.
+  CodeUri:
+    Type: String
+    Default: ./src
+
+  # Destination email address the unlocked SOA PDF is sent to.
+  # NoEcho keeps the value out of CloudFormation logs and stack output.
+  UserEmail:
+    Type: String
+    NoEcho: true
+    Description: Destination email address for the SOA PDF.
+
+  # Registered mobile number used for OTP verification (also kept secret).
+  UserMobile:
+    Type: String
+    NoEcho: true
+    Description: Registered mobile number for OTP verification.
+
+# Base URL of the Converge SOA API; environment-specific endpoints override this.
+  ConvergeApiUrl:
+    Type: String
+    Default: https://get-soa.convergeict.com/api/v1/account
+    Description: Base URL of the Converge SOA API.
+
+  # Name of the S3 bucket where downloaded SOA PDFs are stored (created below).
+  # Must be globally unique, e.g. isp-soa-automation-<env>-<account-id>.
+  # The Lambda's role only allows writes to this bucket (least privilege).
+  SoaBucketName:
+    Type: String
+    Description: Name of the S3 bucket where SOA PDFs are uploaded.
+
+# ---------------------------------------------------------------------------
+# Resources
+# Cloud resources this stack creates (here: a single Lambda function).
+# ---------------------------------------------------------------------------
+Resources:
+  # Logical name used internally by CloudFormation. The deployed AWS resource
+  # name is set explicitly below via FunctionName.
+  SoaAutomationFunction:
+    Type: AWS::Serverless::Function # SAM shorthand: Lambda + role + CloudWatch logs.
+    Properties:
+      # Actual AWS Lambda function name.
+      FunctionName: isp-soa-automation
+
+      # Code location (resolved to the CodeUri parameter above).
+      CodeUri: !Ref CodeUri
+
+      # Defined above (nodejs22.x by default).
+      Runtime: !Ref Runtime
+
+      # Defined above (index.handler by default).
+      Handler: !Ref Handler
+
+      # Max execution time in seconds - high because the OTP-flow + download
+      # can take a while. 300s is the Lambda hard limit.
+      Timeout: 300
+
+      # RAM in MB (also scales CPU). 1024 is fine for PDF processing.
+      MemorySize: 1024
+
+      # Environment variables exposed to the Lambda as process.env.*.
+      # Values are pulled from the deploy-time parameters.
+      Environment:
+        Variables:
+          USER_EMAIL: !Ref UserEmail
+          USER_MOBILE: !Ref UserMobile
+          CONVERGE_API_URL: !Ref ConvergeApiUrl
+
+      # IAM policies attached to the auto-created execution role.
+      # Repo-specific inline policy in place of the generic AWSLambdaBasicExecutionRole:
+      # grants CloudWatch log streaming + S3 upload to the target bucket only.
+      Policies:
+        - PolicyName: IspSoaAutomationExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch logs - same permissions as AWSLambdaBasicExecutionRole.
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/isp-soa-automation:*
+              # Upload the downloaded/unlocked SOA PDF to the target bucket.
+              - Sid: PutSoaToBucket
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref SoaBucket, '/*' ] ]
+
+      # Custom tags for resource-level cost tracking / filtering.
+      Tags:
+        App: isp-soa-automation
+        Environment: !Ref Environment
+
+  # Private bucket that temporarily holds the downloaded/unlocked SOA PDF
+  # before it is emailed, then auto-expired.
+  SoaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref SoaBucketName
+      # Explicitly block all public access (defense in depth even though
+      # buckets are private by default).
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      # Ownership enforced by bucket owner - disables ACLs entirely.
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      # Encrypt at rest with SSE-S3 (AES-256) by default.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Keep versions so a reprocessed SOA is never lost during the OTP flow.
+      VersioningConfiguration:
+        Status: Enabled
+      # Delivery buffer, not an archive: expire objects after 30 days
+      # to keep storage costs at ~zero.
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: App
+          Value: isp-soa-automation
+        - Key: Environment
+          Value: !Ref Environment
+
+# ---------------------------------------------------------------------------
+# Outputs
+# Values surfaced after `sam deploy` - handy to capture in GitHub Actions.
+# ---------------------------------------------------------------------------
+Outputs:
+  SoaAutomationFunctionArn:
+    Description: ARN of the isp-soa-automation Lambda function
+    Value: !GetAtt SoaAutomationFunction.Arn
+  SoaAutomationFunctionName:
+    Description: Name of the isp-soa-automation Lambda function
+    Value: !Ref SoaAutomationFunction
+  SoaBucketArn:
+    Description: ARN of the SOA PDF S3 bucket
+    Value: !GetAtt SoaBucket.Arn
+  SoaBucketNameOut:
+    Description: Name of the SOA PDF S3 bucket
+    Value: !Ref SoaBucket

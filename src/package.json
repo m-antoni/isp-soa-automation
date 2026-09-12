@@ -1,0 +1,13 @@
+{
+  "name": "isp-soa-automation",
+  "version": "1.0.0",
+  "description": "Lambda for retrieving Converge SOA and delivering it",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"no tests\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "pdf-lib": "^1.17.1"
+  }
+}
