@@ -97,15 +97,14 @@ Resources:
           USER_EMAIL: !Ref UserEmail
           USER_MOBILE: !Ref UserMobile
           CONVERGE_API_URL: !Ref ConvergeApiUrl
+          SOA_BUCKET_NAME: !Ref SoaBucket
 
       # IAM policies attached to the auto-created execution role.
       # Repo-specific inline policy in place of the generic AWSLambdaBasicExecutionRole:
       # grants CloudWatch log streaming + S3 upload to the target bucket only.
       Policies:
-        - PolicyName: IspSoaAutomationExecutionPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
+        - Version: '2012-10-17'
+          Statement:
               # CloudWatch logs - same permissions as AWSLambdaBasicExecutionRole.
               - Sid: CloudWatchLogs
                 Effect: Allow

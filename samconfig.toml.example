@@ -1,0 +1,55 @@
+# ============================================================================
+# samconfig.toml.example - Copy to samconfig.toml and fill in your values.
+# ============================================================================
+#
+# This file is loaded automatically by `sam deploy` when run from this directory,
+# so you can deploy with zero flags.
+#
+# STRUCTURE
+#   [<env>.<command>.parameters]
+#     env     - deployment environment. SAM CLI reads the "default" table.
+#     command - the SAM subcommand these defaults target (deploy in this file).
+#
+# GLOBAL PARAMETERS (applied to every SAM command)
+#   profile : AWS named profile from ~/.aws/credentials used for all AWS calls.
+#   region  : AWS region where the stack and Lambda resources are deployed.
+#
+# DEPLOY PARAMETERS (applied only to `sam deploy`)
+#   stack_name        : CloudFormation stack name. A stack consolidates and
+#                       versions all resources created from template.yaml.
+#   capabilities      : CAPABILITY_IAM grants SAM permission to create/reference
+#                       IAM roles and policies for the Lambda execution role.
+#   resolve_s3        : true  = SAM auto-creates a managed packaging bucket.
+#                       false = SAM expects a manually created bucket below.
+#   s3_bucket         : Packaging bucket used by SAM to stage the built Lambda
+#                       code BEFORE CloudFormation runs. It is NOT part of the
+#                       stack. It must already exist (created once) - SAM will
+#                       never create a bucket with an arbitrary name.
+#   parameter_overrides : Values for the CloudFormation parameters defined in
+#                       template.yaml. Whitespace-separated Key=Value pairs.
+#
+#   Environment       : Deployment stage, only used for resource tags.
+#   UserEmail         : Destination email for the unlocked SOA PDF (NoEcho).
+#   UserMobile        : Registered mobile number used for OTP (NoEcho).
+#   ConvergeApiUrl    : Base URL of the Converge SOA API.
+#   SoaBucketName     : Name of the SOA PDF S3 bucket. This bucket IS defined in
+#                       template.yaml (created by CloudFormation on deploy).
+#
+# SECURITY NOTE
+#   This file is safe to commit (no real values). The real samconfig.toml is
+#   gitignored because it contains personal data (email/mobile). CI/CD pipelines
+#   must pass parameter_overrides explicitly via secrets.
+# ============================================================================
+
+version = 0.1
+
+[default.global.parameters]
+profile = "default"
+region = "ap-southeast-1"
+
+[default.deploy.parameters]
+stack_name = "isp-soa-automation"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = false
+s3_bucket = "YOUR_SAM_PACKAGING_BUCKET_NAME"
+parameter_overrides = "Environment=dev UserEmail=YOUR_EMAIL UserMobile=YOUR_MOBILE ConvergeApiUrl=https://get-soa.convergeict.com/api/v1/account SoaBucketName=YOUR_GLOBALLY_UNIQUE_BUCKET_NAME"
