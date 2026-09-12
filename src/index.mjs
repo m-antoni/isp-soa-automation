@@ -52,7 +52,7 @@ export const handler = async (event, context) => {
 // ** Enter Account Details
 async function getAccountDetails(payload = {}) {
   try {
-    const response = await fetch(`${config.CONVERGE_API_URL}`, {
+    const response = await fetch(`${config.CONVERGE_API_URL}/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
