@@ -36,6 +36,16 @@
 #   ConvergeApiUrl    : Base URL of the Converge SOA API.
 #   SoaBucketName     : Name of the SOA PDF S3 bucket. This bucket IS defined in
 #                       template.yaml (created by CloudFormation on deploy).
+#   GmailClientId     : Google OAuth2 client ID for the Gmail API.
+#   GmailClientSecret : Google OAuth2 client secret (NoEcho).
+#   GmailRefreshToken : Offline refresh token minting Gmail API tokens (NoEcho).
+#   MailFrom          : Sender address, verified in AWS SES.
+#   MailTo            : Recipient address for the unlocked SOA PDF.
+#
+# EMAIL DELIVERY NOTE
+#   The unlocked SOA PDF is emailed by the Lambda itself via AWS SES
+#   (SendRawEmail), so no SMTP app passwords are needed. Verify MailFrom in
+#   AWS SES (sandbox mode also requires verifying recipients).
 #
 # SECURITY NOTE
 #   This file is safe to commit (no real values). The real samconfig.toml is
@@ -54,4 +64,4 @@ stack_name = "isp-soa-automation"
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = false
 s3_bucket = "YOUR_SAM_PACKAGING_BUCKET_NAME"
-parameter_overrides = "Environment=dev UserEmail=YOUR_EMAIL UserMobile=YOUR_MOBILE ConvergeApiUrl=https://get-soa.convergeict.com/api/v1/account SoaBucketName=YOUR_GLOBALLY_UNIQUE_BUCKET_NAME PdfPassword=YOUR_PDF_PASSWORD ConvergeAccountNo=YOUR_ACCOUNT_NO"
+parameter_overrides = "Environment=dev UserEmail=YOUR_EMAIL UserMobile=YOUR_MOBILE ConvergeApiUrl=https://get-soa.convergeict.com/api/v1/account SoaBucketName=YOUR_GLOBALLY_UNIQUE_BUCKET_NAME PdfPassword=YOUR_PDF_PASSWORD ConvergeAccountNo=YOUR_ACCOUNT_NO GmailClientId=YOUR_GMAIL_CLIENT_ID GmailClientSecret=YOUR_GMAIL_CLIENT_SECRET GmailRefreshToken=YOUR_GMAIL_REFRESH_TOKEN MailFrom=YOUR_MAIL_FROM MailTo=YOUR_MAIL_TO"

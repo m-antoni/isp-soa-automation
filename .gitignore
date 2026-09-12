@@ -1,5 +1,6 @@
 .env
 notes.md
+google.secrets.json
 
 node_modules/
 .aws-sam/

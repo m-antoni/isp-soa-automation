@@ -60,6 +60,35 @@ Parameters:
     Type: String
     Description: Converge account number for the SOA retrieval flow.
 
+  # Gmail API (OAuth2) credentials used to read the OTP email.
+  # Client ID is not secret; Secret and Refresh Token are NoEcho.
+  GmailClientId:
+    Type: String
+    Description: Google OAuth2 client ID for the Gmail API.
+
+  GmailClientSecret:
+    Type: String
+    NoEcho: true
+    Description: Google OAuth2 client secret for the Gmail API.
+
+  GmailRefreshToken:
+    Type: String
+    NoEcho: true
+    Description: Offline refresh token that mints Gmail API access tokens.
+
+  # SES sender/recipient for emailing the unlocked SOA PDF.
+  # MAIL_FROM must be a verified identity in AWS SES.
+  # Defaults keep deploys working even when overrides omit these params.
+  MailFrom:
+    Type: String
+    Default: michaelantoni.tech@gmail.com
+    Description: Sender address (verified in AWS SES) for the SOA email.
+
+  MailTo:
+    Type: String
+    Default: michaelantoni.tech@gmail.com
+    Description: Recipient address for the unlocked SOA PDF.
+
 # Base URL of the Converge SOA API; environment-specific endpoints override this.
   ConvergeApiUrl:
     Type: String
@@ -112,6 +141,23 @@ Resources:
           SOA_BUCKET_NAME: !Ref SoaBucket
           PDF_PASSWORD: !Ref PdfPassword
           CONVERGE_ACCOUNT_NO: !Ref ConvergeAccountNo
+          GMAIL_CLIENT_ID: !Ref GmailClientId
+          GMAIL_CLIENT_SECRET: !Ref GmailClientSecret
+          GMAIL_REFRESH_TOKEN: !Ref GmailRefreshToken
+          MAIL_FROM: !Ref MailFrom
+          MAIL_TO: !Ref MailTo
+
+      # EventBridge rule: run the SOA pipeline on the 25th of every month.
+      Events:
+        MonthlySoa:
+          Type: Schedule
+          Properties:
+            # Run at 00:00 UTC on the 25th of each month
+            # (EventBridge cron = min hour day-of-month month day-of-week year).
+            Schedule: cron(0 0 25 * ? *)
+            Name: isp-soa-automation-monthly
+            Description: Trigger SOA retrieval on the 25th of every month
+            State: ENABLED
 
       # IAM policies attached to the auto-created execution role.
       # Repo-specific inline policy in place of the generic AWSLambdaBasicExecutionRole:
@@ -134,6 +180,12 @@ Resources:
                   - s3:PutObject
                   - s3:PutObjectAcl
                 Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref SoaBucket, '/*' ] ]
+              # Send the unlocked SOA PDF as an email attachment via SES.
+              - Sid: SendEmailViaSes
+                Effect: Allow
+                Action:
+                  - ses:SendRawEmail
+                Resource: "*"
 
       # Custom tags for resource-level cost tracking / filtering.
       Tags:

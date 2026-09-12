@@ -19,9 +19,35 @@ Built with the AWS Serverless Application Model (SAM):
 ├── samconfig.toml.example   # Committable template; copy to samconfig.toml
 ├── src/                     # Lambda function source (ESM, Node 22)
 │   ├── index.mjs            # Handler entry point (index.handler)
+│   ├── gmail.mjs            # Gmail OAuth2 + OTP retrieval
 │   └── package.json         # Lambda runtime dependencies
 └── events/event.json        # Sample payload for local invocation
 ```
+
+## Lambda Dependencies (`src/package.json`)
+
+These are the runtime packages bundled with the function. `sam build` installs them from `src/package.json` into the deployment package.
+
+| Package                        | Purpose                                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `@aws-sdk/client-s3`           | Uploads the unlocked SOA PDF to the staging bucket (`PutObjectCommand`).                                                             |
+| `@aws-sdk/signature-v4`        | Computes the SigV4 signature for the SES `SendRawEmail` HTTP request.                                                                |
+| `@smithy/protocol-http`        | Provides the `HttpRequest` object the signer and `fetch` work against.                                                               |
+| `@aws-sdk/credential-providers`| `fromNodeProviderChain()` resolves the Lambda IAM role credentials (falls back to `~/.aws` locally) for signing.                      |
+| `@aws-crypto/sha256-js`        | Pure-JS SHA-256 used by SigV4 to hash the request payload and canonical headers.                                                      |
+| `@neslinesli93/qpdf-wasm`      | qpdf compiled to WebAssembly; decrypts the password-protected SOA PDF (`--password=X --decrypt`).                                    |
+| `pdf-lib`                      | Validates the decrypted PDF (parses it back) and generates the earlier MIME attachment.                                               |
+
+Why no `@aws-sdk/client-ses`? The current SDK generation's Query-protocol serializer
+silently drops `RawMessage.Data`, so SES rejects the email with
+`rawMessage: Member must not be null`. The Lambda therefore builds and SigV4-signs
+the `SendRawEmail` request by hand (`sendPdfEmail` in `src/index.mjs`) instead of
+using the SES client — removing the dependency also shrinks the bundle.
+
+Why not `pdf-lib` for unlocking? pdf-lib cannot decrypt password-protected PDFs at
+all; it throws `EncryptedPDFError` for any encrypted document, regardless of the
+password. `@neslinesli93/qpdf-wasm` handles real decryption (RC4, AES-128 and
+AES-256) and leaves the PDF content streams intact.
 
 ## Environment Variables
 
@@ -35,6 +61,11 @@ The Lambda reads these from its runtime environment (`process.env`). Values are 
 | `SOA_BUCKET_NAME`      | S3 bucket where downloaded SOA PDFs go       | ✓        |
 | `PDF_PASSWORD`         | Password that unlocks the SOA PDF            | ✓        |
 | `CONVERGE_ACCOUNT_NO`  | Converge account number for the SOA flow     | ✓        |
+| `GMAIL_CLIENT_ID`      | Google OAuth2 client ID for the Gmail API    | ✓        |
+| `GMAIL_CLIENT_SECRET`  | Google OAuth2 client secret                  | ✓        |
+| `GMAIL_REFRESH_TOKEN`  | Offline refresh token for Gmail API access   | ✓        |
+| `MAIL_FROM`            | SES sender address (verified identity)       | ✓        |
+| `MAIL_TO`              | Recipient address for the SOA PDF            | ✓        |
 
 ## Deploy Parameters
 
@@ -52,12 +83,89 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 | `ConvergeAccountNo` | —                              | Required                       |
 | `ConvergeApiUrl`  | `https://get-soa.convergeict.com/api/v1/account` |                          |
 | `SoaBucketName`   | —                                | Must be globally unique        |
+| `GmailClientId`   | —                                | Google OAuth2 client ID        |
+| `GmailClientSecret` | —                            | NoEcho (secret), required      |
+| `GmailRefreshToken` | —                           | NoEcho (secret), required      |
+| `MailFrom`          | —                            | Verified SES identity          |
+| `MailTo`            | —                            | Recipient email                |
+
+## Emailing the SOA PDF (AWS SES)
+
+The unlocked PDF is emailed by the Lambda itself using **AWS SES** (`SendRawEmail`
+with a MIME attachment), so no SMTP app passwords are needed. The request is built
+and SigV4-signed by the Lambda directly (see "Lambda Dependencies" for why the SES
+client is not used). The function's IAM role is granted `ses:SendRawEmail` in
+`template.yaml`.
+
+Setup in AWS Console (SES):
+
+1. Verify the `MailFrom` sender address as a SES identity.
+2. SES starts in **sandbox** mode: you can only send to verified recipients
+   (make sure `MailTo` is verified too) and sending limits are low. Request
+   production access (`SES > Account dashboard > Request production access`) to
+   lift the sandbox restrictions.
+3. If your `MailFrom` domain differs from the address, set up DKIM/DMARC
+   optionally.
+
+The scheduled EventBridge rule (25th of each month) triggers the whole pipeline
+automatically; the GitHub Actions workflow only deploys.
 
 ## Prerequisites
 
 - AWS CLI (`aws configure`)
 - AWS SAM CLI
 - Node.js 22 (for local testing)
+
+## Google OAuth 2.0 & Refresh Token Setup
+
+Guide for setting up Google OAuth 2.0 credentials and generating a long-lived `REFRESH_TOKEN` for programmatic Gmail access. The Lambda uses it to read the Converge OTP from your inbox.
+
+---
+
+### 1. Google Cloud Console Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project (or select an existing one) and enable the **Gmail API**.
+3. Configure the **OAuth consent screen**:
+   - Set User Type to **External**.
+   - Add your Gmail address under **Audience / Test users**.
+4. Go to **Credentials > + Create Credentials > OAuth client ID**:
+   - Select **Web application** as the application type.
+   - Add the following to **Authorised redirect URIs**:
+     ```text
+     https://oauth.pstmn.io/v1/browser-callback
+     https://developers.google.com/oauthplayground
+     ```
+5. Click **Create** and save your `Client ID` and `Client Secret`.
+
+> **Tip:** The **Gmail API must be enabled on the project the OAuth client belongs to**, otherwise calls fail with `403` / `SERVICE_DISABLED`. You can verify (and enable) it here, substituting your project ID:
+> [`https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=<PROJECT_ID>`](https://console.developers.google.com/apis/api/gmail.googleapis.com/overview)
+> After enabling, wait a few minutes for the change to propagate before re-running the Lambda.
+
+### 2. Generating the Refresh Token
+
+1. Open [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/).
+2. Click the **Gear Icon (⚙️)** in the top-right corner.
+3. Check **Use your own OAuth credentials** and enter your `Client ID` and `Client Secret`.
+4. Under **Step 1 (Select & authorize APIs)**, enter the required scope in the text box:
+   ```text
+   https://www.googleapis.com/auth/gmail.readonly
+   ```
+5. Click **Authorize APIs**, select your test Gmail account, and grant permissions.
+6. In **Step 2 (Exchange authorization code for tokens)**, click **Exchange authorization code for tokens**.
+7. Copy the generated `refresh_token` from the response body.
+
+### 3. Environment Configuration
+
+Store these credentials securely in your environment (`.env` or AWS Lambda environment variables):
+
+```env
+GMAIL_CLIENT_ID="your-client-id"
+GMAIL_CLIENT_SECRET="your-client-secret"
+GMAIL_REFRESH_TOKEN="1//04..."
+```
+
+Wire them into deployment as the `GmailClientId`, `GmailClientSecret`, and `GmailRefreshToken` parameters (see Environment Variables / Deploy Parameters above).
 
 ## Configuration
 
