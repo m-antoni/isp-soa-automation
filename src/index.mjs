@@ -1,10 +1,26 @@
 import { PDFDocument } from "pdf-lib";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { SESClient, SendRawEmailCommand } from "@aws-sdk/client-ses";
+import createQpdfModule from "@neslinesli93/qpdf-wasm";
 import { fetchOtpFromGmail } from "./gmail.mjs";
 
 const s3 = new S3Client({});
 const ses = new SESClient({});
+
+// pdf-lib cannot decrypt password-protected PDFs, so we use qpdf (WASM).
+// The module is loaded once per container; FS is in-memory (MEMFS).
+const qpdfStderr = [];
+let qpdfModulePromise;
+function getQpdf() {
+  if (!qpdfModulePromise) {
+    qpdfModulePromise = createQpdfModule({
+      noInitialRun: true,
+      noExitRuntime: true,
+      printErr: (message) => qpdfStderr.push(String(message)),
+    });
+  }
+  return qpdfModulePromise;
+}
 
 // Config loaded from the Lambda environment.
 const {
@@ -74,23 +90,8 @@ export const handler = async (event, context) => {
       const soaBuffer = await downloadPdf(verifyOTP);
       console.log("SOA PDF BYTES", soaBuffer.length);
 
-      // Step 5: Unlock the encrypted PDF loaded with the account password.
-      let pdfDoc;
-      try {
-        pdfDoc = await PDFDocument.load(new Uint8Array(soaBuffer), {
-          password: config.PDF_PASSWORD,
-        });
-      } catch (error) {
-        console.error(
-          "FAILED TO UNLOCK PDF",
-          JSON.stringify(inspectPdfEncryption(soaBuffer))
-        );
-        throw new Error(
-          `Unable to open the SOA PDF with PDF_PASSWORD: ${error.message}`,
-          { cause: error }
-        );
-      }
-      const unlockedBytes = await pdfDoc.save();
+      // Step 5: Unlock the encrypted PDF with the account password via qpdf.
+      const unlockedBytes = await decryptSoaPdf(soaBuffer, config.PDF_PASSWORD);
       console.log("UNLOCKED PDF BYTES", unlockedBytes.length);
 
       // Step 6: Upload the unlocked PDF to the SOA bucket.
@@ -214,6 +215,60 @@ async function downloadPdf(verifyOTP) {
   }
 
   return await response.arrayBuffer();
+}
+
+// ** Decrypt a password-protected PDF via the qpdf WASM build.
+// Returns a Buffer of the unprotected PDF (content-preserving, streams intact).
+async function decryptSoaPdf(soaBuffer, password) {
+  const qpdf = await getQpdf();
+  const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const inPath = `/in-${tag}.pdf`;
+  const outPath = `/out-${tag}.pdf`;
+  qpdfStderr.length = 0;
+
+  try {
+    qpdf.FS.writeFile(inPath, new Uint8Array(soaBuffer));
+    qpdf.callMain([inPath, "--decrypt", `--password=${password}`, outPath]);
+  } catch (error) {
+    throw new Error(
+      `qpdf decrypt failed (check PDF_PASSWORD): ${qpdfStderr.join(" ") || error.message}`
+    );
+  } finally {
+    try {
+      qpdf.FS.unlink(inPath);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  let decrypted;
+  try {
+    decrypted = Buffer.from(qpdf.FS.readFile(outPath));
+  } catch {
+    throw new Error(
+      `qpdf produced no output (wrong PDF_PASSWORD?): ${qpdfStderr.join(" ")}`
+    );
+  } finally {
+    try {
+      qpdf.FS.unlink(outPath);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  try {
+    // pdf-lib can now open it (no longer encrypted), which also validates it.
+    await PDFDocument.load(decrypted);
+  } catch (error) {
+    console.error(
+      "FAILED TO UNLOCK PDF",
+      JSON.stringify(inspectPdfEncryption(soaBuffer))
+    );
+    throw new Error(
+      `qpdf produced an unusable PDF: ${error.message}. qpdf: ${qpdfStderr.join(" ")}`
+    );
+  }
+  return decrypted;
 }
 
 // ** Helper: current period + file name used for the S3 object
