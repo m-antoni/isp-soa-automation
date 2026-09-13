@@ -314,6 +314,7 @@ function inspectPdfEncryption(bytes) {
 
 // ** Send the unlocked SOA PDF via Gmail SMTP (Google's own servers, so the
 // mail isn't flagged as spam). Uses an App Password, not the account password.
+// MAIL_TO may hold multiple comma-separated recipients.
 async function sendPdfEmail({ fileName, buffer }) {
   const mailer = nodemailer.createTransport({
     host: "smtp.gmail.com",
@@ -325,10 +326,14 @@ async function sendPdfEmail({ fileName, buffer }) {
     },
   });
 
+  const recipients = [...new Set(
+    config.MAIL_TO.split(",").map((s) => s.trim()).filter(Boolean)
+  )];
+
   try {
     const info = await mailer.sendMail({
       from: config.MAIL_FROM,
-      to: config.MAIL_TO,
+      to: recipients,
       subject: `Your Converge SOA (${fileName})`,
       text: "The latest Converge Statement of Account is attached.",
       attachments: [{ filename: fileName, content: buffer }],

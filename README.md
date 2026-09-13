@@ -63,7 +63,7 @@ The Lambda reads these from its runtime environment (`process.env`). Values are 
 | `GMAIL_CLIENT_SECRET`  | Google OAuth2 client secret                  | ✓        |
 | `GMAIL_REFRESH_TOKEN`  | Offline refresh token for Gmail API access   | ✓        |
 | `MAIL_FROM`            | Gmail sender account (sends via Gmail SMTP) | ✓        |
-| `MAIL_TO`              | Recipient address for the SOA PDF            | ✓        |
+| `MAIL_TO`              | Recipient(s) for the SOA PDF (comma-separated for multiple) | ✓        |
 | `GMAIL_SMTP_APP_PASSWORD` | Gmail App Password for `MAIL_FROM`        | ✓        |
 
 ## Deploy Parameters
@@ -86,7 +86,7 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 | `GmailClientSecret` | —                            | NoEcho (secret), required      |
 | `GmailRefreshToken` | —                           | NoEcho (secret), required      |
 | `MailFrom`          | `michaelantoni.tech@gmail.com` | Gmail sender account        |
-| `MailTo`            | `michaelantoni.tech@gmail.com` | Recipient email             |
+| `MailTo`            | `michaelantoni.tech@gmail.com` | Recipient(s), comma-separated  |
 | `GmailAppPassword`  | —                         | NoEcho (secret), Gmail App Password |
 
 ## Emailing the SOA PDF (Gmail SMTP)
