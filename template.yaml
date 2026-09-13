@@ -76,18 +76,26 @@ Parameters:
     NoEcho: true
     Description: Offline refresh token that mints Gmail API access tokens.
 
-  # SES sender/recipient for emailing the unlocked SOA PDF.
-  # MAIL_FROM must be a verified identity in AWS SES.
+  # Sender/recipient for emailing the unlocked SOA PDF via Gmail SMTP.
+  # MAIL_FROM is the Gmail account that sends (needs an App Password below);
+  # sending through Google's own servers keeps the mail out of spam.
   # Defaults keep deploys working even when overrides omit these params.
   MailFrom:
     Type: String
     Default: michaelantoni.tech@gmail.com
-    Description: Sender address (verified in AWS SES) for the SOA email.
+    Description: Gmail sender address (must match GmailAppPassword).
 
   MailTo:
     Type: String
     Default: michaelantoni.tech@gmail.com
     Description: Recipient address for the unlocked SOA PDF.
+
+  # Gmail App Password for MAIL_FROM (16 chars, spaces ignored). Requires
+  # 2-Step Verification on the Gmail account. Never use the account password.
+  GmailAppPassword:
+    Type: String
+    NoEcho: true
+    Description: Gmail App Password for the MAIL_FROM account.
 
 # Base URL of the Converge SOA API; environment-specific endpoints override this.
   ConvergeApiUrl:
@@ -146,6 +154,7 @@ Resources:
           GMAIL_REFRESH_TOKEN: !Ref GmailRefreshToken
           MAIL_FROM: !Ref MailFrom
           MAIL_TO: !Ref MailTo
+          GMAIL_SMTP_APP_PASSWORD: !Ref GmailAppPassword
 
       # EventBridge rule: run the SOA pipeline on the 25th of every month.
       Events:
@@ -180,12 +189,6 @@ Resources:
                   - s3:PutObject
                   - s3:PutObjectAcl
                 Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref SoaBucket, '/*' ] ]
-              # Send the unlocked SOA PDF as an email attachment via SES.
-              - Sid: SendEmailViaSes
-                Effect: Allow
-                Action:
-                  - ses:SendRawEmail
-                Resource: "*"
 
       # Custom tags for resource-level cost tracking / filtering.
       Tags:

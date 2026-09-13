@@ -1,9 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { SignatureV4 } from "@aws-sdk/signature-v4";
-import { HttpRequest } from "@smithy/protocol-http";
-import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
-import { Sha256 } from "@aws-crypto/sha256-js";
+import nodemailer from "nodemailer";
 import createQpdfModule from "@neslinesli93/qpdf-wasm";
 import { fetchOtpFromGmail } from "./gmail.mjs";
 
@@ -37,6 +34,7 @@ const {
   GMAIL_REFRESH_TOKEN,
   MAIL_FROM,
   MAIL_TO,
+  GMAIL_SMTP_APP_PASSWORD,
 } = process.env;
 
 const config = {
@@ -51,6 +49,7 @@ const config = {
   GMAIL_REFRESH_TOKEN,
   MAIL_FROM,
   MAIL_TO,
+  GMAIL_SMTP_APP_PASSWORD,
 };
 
 for (const [key, value] of Object.entries(config)) {
@@ -109,7 +108,7 @@ export const handler = async (event, context) => {
       );
       console.log("UPLOADED S3", s3Key);
 
-      // Step 7: Email the unlocked SOA PDF via SES.
+      // Step 7: Email the unlocked SOA PDF via Gmail SMTP.
       await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
       return {
         statusCode: 200,
@@ -313,90 +312,29 @@ function inspectPdfEncryption(bytes) {
   return details;
 }
 
-// ** Build a MIME multipart/mixed message with the SOA PDF as an attachment.
-function buildMimeMessage({ to, from, subject, body, fileName, pdfBuffer }) {
-  const boundary = `----isp-soa-${Date.now()}`;
-  const content = [
-    "MIME-Version: 1.0",
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: 7bit",
-    "",
-    body,
-    `--${boundary}`,
-    `Content-Type: application/pdf; name="${fileName}"`,
-    `Content-Disposition: attachment; filename="${fileName}"`,
-    "Content-Transfer-Encoding: base64",
-    "",
-    pdfBuffer.toString("base64"),
-    `--${boundary}--`,
-  ].join("\r\n");
-
-  return Buffer.from(content, "utf8");
-}
-
-// ** Send the unlocked SOA PDF via SES (SendRawEmail supports attachments).
-// Uses a hand-rolled AWS Query request: the AWS SDK v3 Query-protocol
-// serializer currently drops `RawMessage.Data` ("Member must not be null"),
-// so we build + SigV4-sign the request ourselves.
+// ** Send the unlocked SOA PDF via Gmail SMTP (Google's own servers, so the
+// mail isn't flagged as spam). Uses an App Password, not the account password.
 async function sendPdfEmail({ fileName, buffer }) {
-  const raw = buildMimeMessage({
-    to: config.MAIL_TO,
-    from: config.MAIL_FROM,
-    subject: `Your Converge SOA (${fileName})`,
-    body: "The latest Converge Statement of Account is attached.",
-    fileName,
-    pdfBuffer: buffer,
-  });
-
-  const region = process.env.AWS_REGION ?? "ap-southeast-1";
-  const host = `email.${region}.amazonaws.com`;
-  const queryBody = [
-    "Action=SendRawEmail",
-    "Version=2010-12-01",
-    `RawMessage.Data=${encodeURIComponent(raw.toString("base64"))}`,
-  ].join("&");
-
-  const request = new HttpRequest({
-    method: "POST",
-    protocol: "https:",
-    hostname: host,
-    path: "/",
-    headers: {
-      host,
-      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+  const mailer = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user: config.MAIL_FROM,
+      pass: config.GMAIL_SMTP_APP_PASSWORD,
     },
-    body: queryBody,
   });
 
-  const signer = new SignatureV4({
-    credentials: fromNodeProviderChain(),
-    region,
-    service: "ses",
-    sha256: Sha256,
-  });
-  const signed = await signer.sign(request);
-
-  const response = await fetch(`https://${host}/`, {
-    method: "POST",
-    headers: signed.headers,
-    body: signed.body,
-  });
-  const xml = await response.text();
-
-  if (!response.ok) {
-    const code = /<Code>([^<]*)<\/Code>/.exec(xml)?.[1];
-    const message = /<Message>([^<]*)<\/Message>/.exec(xml)?.[1];
-    throw new Error(
-      `SES send failed (${code ?? response.status}): ${message ?? xml.slice(0, 400)}`
-    );
+  try {
+    const info = await mailer.sendMail({
+      from: config.MAIL_FROM,
+      to: config.MAIL_TO,
+      subject: `Your Converge SOA (${fileName})`,
+      text: "The latest Converge Statement of Account is attached.",
+      attachments: [{ filename: fileName, content: buffer }],
+    });
+    console.log("EMAIL SENT VIA GMAIL SMTP", fileName, info.messageId ?? "");
+  } finally {
+    mailer.close();
   }
-
-  const messageId = /<MessageId>([^<]*)<\/MessageId>/.exec(xml)?.[1];
-  console.log("EMAIL SENT VIA SES", fileName, messageId ?? "");
 }
