@@ -106,9 +106,13 @@ Setup:
    `samconfig.toml` → `GmailAppPassword` for local deploys).
 4. `MAIL_FROM` secret and `MAIL_TO` var/param control sender and recipient.
 
-The scheduled EventBridge rule (25th of each month) triggers the whole pipeline
-automatically; the GitHub Actions workflow only deploys. The Lambda can also be
-invoked manually anytime from the AWS Console **Test** tab.
+Scheduled EventBridge rules trigger the whole pipeline automatically; the
+GitHub Actions workflow only deploys:
+- `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
+- `isp-soa-automation-email` — every day at midnight Asia/Manila (a few days of
+  testing; 16:00 UTC so remove the rule or flip it to `DISABLED` when done).
+
+The Lambda can also be invoked manually anytime from the AWS Console **Test** tab.
 
 ## Prerequisites
 
