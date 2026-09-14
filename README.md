@@ -15,14 +15,20 @@ Built with the AWS Serverless Application Model (SAM):
 ```
 .
 ├── .github/workflows/                    # GitHub Actions
+│   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit, spell, leaks)
 │   ├── deploy-dev.yml                    # Deploy stack to dev on push to `dev`
-│   └── master-pr-approval.yml            # Telegram approve-to-merge for PRs to `master`
+│   └── approve-merge-to-master.yml       # Telegram approve-to-merge for PRs to `master`
+├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
+├── .github/vars-manifest.txt             # Allowlisted vars.NAMEs used in workflows
 ├── docs/                                 # Setup guides
+│   ├── github_actions.md                 # All workflows explained
 │   ├── telegram-approval.md              # Telegram bot + approve-to-merge setup
 │   └── google-oauth-setup.md             # Gmail OAuth2 client + refresh token
 ├── src/                                  # Lambda function source (ESM, Node 22)
 │   ├── index.mjs                         # Handler entry point (index.handler)
 │   ├── gmail.mjs                         # Gmail OAuth2 + OTP retrieval
+│   ├── helpers.mjs                       # Pure helpers (no env/network dependencies)
+│   ├── helpers.test.mjs                  # Vitest unit tests for helpers
 │   ├── local.mjs                         # Local-only runner (loads .env, prints result)
 │   └── package.json                      # Lambda runtime dependencies
 ├── events/event.json                     # Sample payload for local invocation
@@ -35,12 +41,12 @@ Built with the AWS Serverless Application Model (SAM):
 
 These are the runtime packages bundled with the function. `sam build` installs them from `src/package.json` into the deployment package.
 
-| Package                        | Purpose                                                                                              |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `@aws-sdk/client-s3`           | Uploads the unlocked SOA PDF to the staging bucket (`PutObjectCommand`).                             |
-| `nodemailer`                   | Sends the SOA email with the PDF attachment via Gmail SMTP (`smtp.gmail.com:465`).                    |
-| `@neslinesli93/qpdf-wasm`      | qpdf compiled to WebAssembly; decrypts the password-protected SOA PDF (`--password=X --decrypt`).    |
-| `pdf-lib`                      | Validates the decrypted PDF (parses it back) after unlocking.                                        |
+| Package                   | Purpose                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@aws-sdk/client-s3`      | Uploads the unlocked SOA PDF to the staging bucket (`PutObjectCommand`).                          |
+| `nodemailer`              | Sends the SOA email with the PDF attachment via Gmail SMTP (`smtp.gmail.com:465`).                |
+| `@neslinesli93/qpdf-wasm` | qpdf compiled to WebAssembly; decrypts the password-protected SOA PDF (`--password=X --decrypt`). |
+| `pdf-lib`                 | Validates the decrypted PDF (parses it back) after unlocking.                                     |
 
 Why Gmail SMTP and not AWS SES? SES cannot legitimately send from a `@gmail.com`
 address: Google's SPF/DKIM/DMARC records only authorize Google's own servers to
@@ -58,43 +64,43 @@ AES-256) and leaves the PDF content streams intact.
 
 The Lambda reads these from its runtime environment (`process.env`). Values are supplied at deploy time via CloudFormation `--parameter-overrides`.
 
-| Environment Variables  | Description                                  | Required |
-| ---------------------- | -------------------------------------------- | -------- |
-| `USER_EMAIL`           | Email address the unlocked SOA is sent to    | ✓        |
-| `USER_MOBILE`          | Registered mobile number used for OTP        | ✓        |
-| `CONVERGE_API_URL`     | Base URL of the Converge SOA API             | ✓        |
-| `SOA_BUCKET_NAME`      | S3 bucket where downloaded SOA PDFs go       | ✓        |
-| `PDF_PASSWORD`         | Password that unlocks the SOA PDF            | ✓        |
-| `CONVERGE_ACCOUNT_NO`  | Converge account number for the SOA flow     | ✓        |
-| `GMAIL_CLIENT_ID`      | Google OAuth2 client ID for the Gmail API    | ✓        |
-| `GMAIL_CLIENT_SECRET`  | Google OAuth2 client secret                  | ✓        |
-| `GMAIL_REFRESH_TOKEN`  | Offline refresh token for Gmail API access   | ✓        |
-| `MAIL_FROM`            | Gmail sender account (sends via Gmail SMTP) | ✓        |
-| `MAIL_TO`              | Recipient(s) for the SOA PDF (comma-separated for multiple) | ✓        |
-| `GMAIL_SMTP_APP_PASSWORD` | Gmail App Password for `MAIL_FROM`        | ✓        |
+| Environment Variables     | Description                                                 | Required |
+| ------------------------- | ----------------------------------------------------------- | -------- |
+| `USER_EMAIL`              | Email address the unlocked SOA is sent to                   | ✓        |
+| `USER_MOBILE`             | Registered mobile number used for OTP                       | ✓        |
+| `CONVERGE_API_URL`        | Base URL of the Converge SOA API                            | ✓        |
+| `SOA_BUCKET_NAME`         | S3 bucket where downloaded SOA PDFs go                      | ✓        |
+| `PDF_PASSWORD`            | Password that unlocks the SOA PDF                           | ✓        |
+| `CONVERGE_ACCOUNT_NO`     | Converge account number for the SOA flow                    | ✓        |
+| `GMAIL_CLIENT_ID`         | Google OAuth2 client ID for the Gmail API                   | ✓        |
+| `GMAIL_CLIENT_SECRET`     | Google OAuth2 client secret                                 | ✓        |
+| `GMAIL_REFRESH_TOKEN`     | Offline refresh token for Gmail API access                  | ✓        |
+| `MAIL_FROM`               | Gmail sender account (sends via Gmail SMTP)                 | ✓        |
+| `MAIL_TO`                 | Recipient(s) for the SOA PDF (comma-separated for multiple) | ✓        |
+| `GMAIL_SMTP_APP_PASSWORD` | Gmail App Password for `MAIL_FROM`                          | ✓        |
 
 ## Deploy Parameters
 
 CloudFormation parameters you pass on deploy (mapped to the function env in `template.yaml`):
 
-| Parameter         | Default                          | Notes                          |
-| ----------------- | -------------------------------- | ------------------------------ |
-| `Environment`     | `dev`                            | `dev` / `prod` (used for tags) |
-| `Runtime`         | `nodejs22.x`                     |                                |
-| `Handler`         | `index.handler`                  |                                |
-| `CodeUri`         | `./src`                          |                                |
-| `UserEmail`       | —                                | NoEcho (secret), required      |
-| `UserMobile`      | —                                | NoEcho (secret), required      |
-| `PdfPassword`     | —                                | NoEcho (secret), required      |
-| `ConvergeAccountNo` | —                              | Required                       |
-| `ConvergeApiUrl`  | `https://get-soa.convergeict.com/api/v1/account` |                          |
-| `SoaBucketName`   | —                                | Must be globally unique        |
-| `GmailClientId`   | —                                | Google OAuth2 client ID        |
-| `GmailClientSecret` | —                            | NoEcho (secret), required      |
-| `GmailRefreshToken` | —                           | NoEcho (secret), required      |
-| `MailFrom`          | `michaelantoni.tech@gmail.com` | Gmail sender account        |
-| `MailTo`            | `michaelantoni.tech@gmail.com` | Recipient(s), comma-separated  |
-| `GmailAppPassword`  | —                         | NoEcho (secret), Gmail App Password |
+| Parameter           | Default                                          | Notes                               |
+| ------------------- | ------------------------------------------------ | ----------------------------------- |
+| `Environment`       | `dev`                                            | `dev` / `prod` (used for tags)      |
+| `Runtime`           | `nodejs22.x`                                     |                                     |
+| `Handler`           | `index.handler`                                  |                                     |
+| `CodeUri`           | `./src`                                          |                                     |
+| `UserEmail`         | —                                                | NoEcho (secret), required           |
+| `UserMobile`        | —                                                | NoEcho (secret), required           |
+| `PdfPassword`       | —                                                | NoEcho (secret), required           |
+| `ConvergeAccountNo` | —                                                | Required                            |
+| `ConvergeApiUrl`    | `https://get-soa.convergeict.com/api/v1/account` |                                     |
+| `SoaBucketName`     | —                                                | Must be globally unique             |
+| `GmailClientId`     | —                                                | Google OAuth2 client ID             |
+| `GmailClientSecret` | —                                                | NoEcho (secret), required           |
+| `GmailRefreshToken` | —                                                | NoEcho (secret), required           |
+| `MailFrom`          | `michaelantoni.tech@gmail.com`                   | Gmail sender account                |
+| `MailTo`            | `michaelantoni.tech@gmail.com`                   | Recipient(s), comma-separated       |
+| `GmailAppPassword`  | —                                                | NoEcho (secret), Gmail App Password |
 
 ## Emailing the SOA PDF (Gmail SMTP)
 
@@ -115,6 +121,7 @@ Setup:
 
 Scheduled EventBridge rules trigger the whole pipeline automatically; the
 GitHub Actions workflow only deploys:
+
 - `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
 - `isp-soa-automation-email` — every day at midnight Asia/Manila (a few days of
   testing; 16:00 UTC so remove the rule or flip it to `DISABLED` when done).
@@ -189,6 +196,37 @@ sam deploy \
 
 Keep `samconfig.toml`, `.env`, and secrets out of version control (already handled in `.gitignore`).
 
+## Testing & Quality Gates
+
+### Unit tests (Vitest)
+
+Pure helper functions in `src/helpers.mjs` are covered by Vitest tests (`src/helpers.test.mjs`). They have no environment, network, or AWS dependencies, so they run instantly and offline:
+
+```bash
+cd src
+npm ci
+npm test
+```
+
+SAM strips devDependencies (including Vitest) during `sam build`, so these stay out of the Lambda deployment package.
+
+### CI workflow (`.github/workflows/ci.yml`)
+
+Runs on every push and pull request:
+
+| Step                           | What it does                                                                                                               |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Validate secrets/vars          | Fails if any `secrets.*`/`vars.*` used in a workflow isn't in `.github/secrets-manifest.txt` / `.github/vars-manifest.txt` |
+| `actionlint`                   | Lints all GitHub Actions workflow YAML files                                                                               |
+| gitleaks                       | Scans full git history for leaked secrets                                                                                  |
+| codespell                      | Spell-checks all source/docs files                                                                                         |
+| `sam validate --lint`          | Validates `template.yaml`                                                                                                  |
+| `npm test`                     | Runs the Vitest unit test suite                                                                                            |
+| `npm audit --audit-level=high` | Fails on high/critical CVEs                                                                                                |
+
+A concurrency group prevents duplicate runs for the same branch. Details for all
+three workflows (orders, triggers, secrets used): **[docs/github_actions.md](docs/github_actions.md)**.
+
 ## Local testing
 
 ### Quick run (no Docker)
@@ -220,10 +258,7 @@ hang; the success response is pretty-printed as JSON.
     "s3": "soa/1464602714620/2026-09/SOA-2026-09-30.pdf",
     "file_name": "SOA-2026-09-30.pdf",
     "email_sent_from": "michaelantoni.tech@gmail.com",
-    "email_sent_to": [
-      "michaelantoni.tech@gmail.com",
-      "m.antoni@accenture.com"
-    ],
+    "email_sent_to": ["michaelantoni.tech@gmail.com", "m.antoni@accenture.com"],
     "timestamp": "2026-09-14T07:01:30.292Z"
   }
 }
@@ -247,7 +282,7 @@ sam local invoke SoaAutomationFunction -e events/event.json \
 
 ## Telegram Approve-to-Merge Workflow (PRs to `master`)
 
-`.github/workflows/master-pr-approval.yml` lets you approve PRs to `master` from
+`.github/workflows/approve-merge-to-master.yml` lets you approve PRs to `master` from
 your phone: the workflow DMs you on Telegram, you reply `yes`/`no`, and it runs
 checks then auto-merges (or rejects).
 

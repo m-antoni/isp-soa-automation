@@ -1,10 +1,28 @@
-name: Approve & merge PR to master
+# approve-merge-to-master — Telegram human gate before anything merges.
+#
+# Triggers:
+# - pull_request opened targeting master (e.g. dev -> master)
+# - manual workflow_dispatch (to test the bot flow without a PR)
+#
+# Sections:
+# - concurrency: per-PR (per dispatch run) — one approval flow at a time
+# - permissions: contents read only (the merge uses GH_BOT_TOKEN, not GITHUB_TOKEN)
+# - jobs.notify:             DMs the PR details to Telegram; outputs notified_at
+# - jobs.wait-for-approval:  polls getUpdates for a reply newer than notified_at;
+#                            YES → approved=yes, NO → fails, other → bot nudges you
+# - jobs.merge (if 'yes'):   checkouts master, runs npm ci + tests, npm audit,
+#                            then gh pr merge --squash --delete-branch
+
+name: approve-merge-to-master
 
 on:
   pull_request:
     types: [opened]
     branches: [master]
   workflow_dispatch:
+
+concurrency:
+  group: approve-master-${{ github.event.number || github.run_id }}
 
 permissions:
   contents: read
@@ -21,10 +39,13 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          PR="${{ github.event.pull_request.number }}"
-          TITLE="${{ github.event.pull_request.title }}"
-          URL="${{ github.event.pull_request.html_url }}"
+          PR="$PR_NUMBER"
+          TITLE="$PR_TITLE"
+          URL="$PR_URL"
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           echo "Bot token length: ${#BOT_TOKEN} (Telegram tokens are 46 chars)"
@@ -106,8 +127,13 @@ jobs:
           cd src
           npm ci
           npm test
+      - name: Audit dependencies
+        run: |
+          cd src
+          npm audit --audit-level=high
       - name: Merge PR
         env:
           GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
+          GH_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
+          gh pr merge "$GH_PR_NUMBER" --squash --delete-branch

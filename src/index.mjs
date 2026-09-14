@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import nodemailer from "nodemailer";
 import createQpdfModule from "@neslinesli93/qpdf-wasm";
 import { fetchOtpFromGmail } from "./gmail.mjs";
+import { summarizeOtpResponse, soaFileNames, inspectPdfEncryption } from "./helpers.mjs";
 
 const s3 = new S3Client({});
 
@@ -218,24 +219,7 @@ async function validateOTP(payload = {}) {
   return await response.json();
 }
 
-// ** Summarize a validateOTP response for logging - the full response carries a
-// large items array (every billing period's PDF), which is noise in both local
-// runs and CloudWatch. Only success, errors, token presence and item count/slug
-// are printed.
-function summarizeOtpResponse(response) {
-  const { success, errors, data } = response ?? {};
-  const inner = data ?? {};
-  const items = inner.items ?? data?.data?.items ?? [];
-  return JSON.stringify({
-    success,
-    errors,
-    hasToken: Boolean(
-      inner.token ?? inner.session_token ?? inner.sessionToken
-    ),
-    itemCount: items.length,
-    firstItemSlug: items[0]?.slug,
-  });
-}
+// ** Summarize a validateOTP response for logging - see helpers.mjs.
 
 // ** Download the latest SOA PDF
 // Relies on the session token + item slug from the validateOTP response.
@@ -325,47 +309,6 @@ async function decryptSoaPdf(soaBuffer, password) {
     );
   }
   return decrypted;
-}
-
-// ** Helper: current period + file name used for the S3 object
-// File name always uses the 15th as the day (e.g. SOA-2026-01-15.pdf).
-function soaFileNames() {
-  const now = new Date();
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  return {
-    month: `${yyyy}-${mm}`,
-    fileName: `SOA-${yyyy}-${mm}-${lastDayOfMonth.getDate()}.pdf`,
-  };
-}
-
-// ** Pull minimal encryption metadata out of a PDF so unlock failures can be
-// diagnosed: wrong PDF_PASSWORD vs an encryption pdf-lib cannot handle
-// (e.g. AES-256 /V 5, /R 5 or 6).
-function inspectPdfEncryption(bytes) {
-  const body = Buffer.from(bytes).toString("latin1");
-  const encryptMatch = body.match(/\/Encrypt\s+(\d+)\s+(\d+)\s+R/);
-  const details = {
-    header: Buffer.from(bytes)
-      .subarray(0, 16)
-      .toString("latin1")
-      .replace(/[^\x20-\x7e]/g, "."),
-    hasEncryptDict: Boolean(encryptMatch),
-  };
-
-  if (encryptMatch) {
-    details.encryptObj = Number(encryptMatch[1]);
-    const filter = body.match(/\/Filter\s+\/(\w+)/);
-    if (filter) details.filter = filter[1];
-    const v = body.match(/\/V\s+(\d+)/);
-    if (v) details.version = Number(v[1]);
-    const r = body.match(/\/R\s+(\d+)/);
-    if (r) details.revision = Number(r[1]);
-    if (body.includes("/AESV3")) details.cf = "AESV3";
-    else if (body.includes("/AESV2")) details.cf = "AESV2";
-  }
-  return details;
 }
 
 // ** Send the unlocked SOA PDF via Gmail SMTP (Google's own servers, so the

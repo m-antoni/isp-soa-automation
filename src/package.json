@@ -5,12 +5,15 @@
   "main": "index.mjs",
   "scripts": {
     "local": "node local.mjs",
-    "test": "echo \"no tests\""
+    "test": "vitest run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
     "@neslinesli93/qpdf-wasm": "^0.3.0",
     "nodemailer": "^10.0.9",
     "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
   }
 }

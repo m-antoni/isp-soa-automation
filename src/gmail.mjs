@@ -1,6 +1,8 @@
 // Gmail API helpers (OAuth2) used to read the Converge OTP from the inbox.
 // Reads its config from the Lambda environment (same vars as index.mjs).
 
+import { decodeMessageBody, extractOtpCandidates } from "./helpers.mjs";
+
 const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN } =
   process.env;
 
@@ -96,13 +98,9 @@ export async function fetchOtpFromGmail({ since } = {}) {
         console.log("GMAIL MSG SUBJECT", subject);
 
         const body = decodeMessageBody(msg.payload);
-        const candidates = [
-          /Confirmation Code:?\s*([A-Z0-9]{6})/i.exec(subject)?.[1],
-          /Your Confirmation Code:\s*([A-Z0-9]{6})/.exec(body)?.[1],
-          body.match(/\b[A-Z0-9]{6}\b/)?.[0],
-        ];
+        const candidates = extractOtpCandidates(subject, body);
         for (const candidate of candidates) {
-          if (candidate) codes.push(candidate);
+          codes.push(candidate);
         }
       }
 
@@ -116,28 +114,3 @@ export async function fetchOtpFromGmail({ since } = {}) {
   throw new Error("OTP not found in Gmail after multiple attempts");
 }
 
-// ** Decode (base64url) the text of a Gmail message payload
-// Gmail messages can be nested multipart structures, so walk every part and
-// collect all text/* bodies (plain-text and HTML), then join them for scanning.
-function decodeMessageBody(payload) {
-  const chunks = [];
-
-  const walk = (node) => {
-    if (!node) return;
-    if ((node.mimeType ?? "").startsWith("text/") && node.body?.data) {
-      chunks.push(node.body.data);
-    }
-    (node.parts ?? []).forEach(walk);
-  };
-
-  walk(payload);
-
-  return chunks
-    .map((data) =>
-      Buffer.from(
-        data.replace(/-/g, "+").replace(/_/g, "/"),
-        "base64"
-      ).toString("utf8")
-    )
-    .join("\n");
-}

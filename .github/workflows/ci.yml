@@ -1,0 +1,92 @@
+# CI — quality gates on every push and pull request.
+#
+# Sections:
+# - on: triggers — every push (any branch) + every pull request
+# - concurrency: one run per branch at a time; a newer run cancels an older one
+# - permissions: contents: read (least privilege)
+# - jobs.check steps in order:
+#   1. validate config    → every secrets.* / vars.* used has a matching
+#                           entry in .github/secrets-manifest.txt / vars-manifest.txt
+#   2. actionlint         → lints all workflow YAML files
+#   3. gitleaks           → scans full git history for leaked secrets
+#   4. spelling (codespell) → spell-checks all source/docs files
+#   5. sam validate       → validates template.yaml
+#   6. npm ci + npm test  → installs lockfile deps, runs the Vitest unit tests
+#   7. npm audit          → fails if any dependency has a high/critical CVE
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate secrets/vars references
+        run: |
+          set -euo pipefail
+          used_secrets="$(grep -rhoE 'secrets\.[A-Z0-9_]+' .github/workflows | sed 's/.*secrets\.//' | sort -u)"
+          used_vars="$(grep -rhoE 'vars\.[A-Z0-9_]+' .github/workflows | sed 's/.*vars\.//' | sort -u)"
+          missing_secrets="$(comm -23 <(printf '%s\n' "$used_secrets") <(sort .github/secrets-manifest.txt))"
+          missing_vars="$(comm -23 <(printf '%s\n' "$used_vars") <(sort .github/vars-manifest.txt))"
+          if [ -n "$missing_secrets" ] || [ -n "$missing_vars" ]; then
+            echo "::error::Referenced secrets/vars not declared in the manifests:"
+            [ -n "$missing_secrets" ] && echo "secrets: $missing_secrets"
+            [ -n "$missing_vars" ] && echo "vars: $missing_vars"
+            exit 1
+          fi
+          echo "All referenced secrets and vars are declared in the manifests."
+
+      - name: Lint workflows
+        uses: rhysd/actionlint@v1.7.12
+
+      - name: Scan for leaked secrets
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks git --redact --no-banner
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Spell check
+        run: |
+          pip install codespell
+          codespell --skip "node_modules,package-lock.json,.git" .
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate SAM template
+        run: sam validate --lint --region us-east-1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and test
+        run: |
+          cd src
+          npm ci
+          npm test
+
+      - name: Audit dependencies
+        run: |
+          cd src
+          npm audit --audit-level=high
