@@ -4,6 +4,7 @@ on:
   pull_request:
     types: [opened]
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,7 +30,11 @@ jobs:
           RESP=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}")
-          echo "$RESP"
+          echo "Telegram response: $RESP"
+          if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
+            echo "::error::Telegram sendMessage failed: $RESP"
+            exit 1
+          fi
           echo "ts=$(echo "$RESP" | jq -r '.result.date')" >> "$GITHUB_OUTPUT"
 
   wait-for-approval:
@@ -47,6 +52,11 @@ jobs:
           SINCE: ${{ needs.notify.outputs.notified_at }}
         run: |
           offset=0
+          if [ -z "$SINCE" ]; then
+            echo "::error::notified_at output was empty - check the notify job log"
+            exit 1
+          fi
+          echo "Polling for a reply newer than timestamp $SINCE..."
           while true; do
             updates=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&timeout=20")
             newest=$(echo "$updates" | jq -r --argjson chat "${TELEGRAM_CHAT_ID}" --argjson since "${SINCE}" '
