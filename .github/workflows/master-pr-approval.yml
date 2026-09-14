@@ -58,6 +58,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SINCE: ${{ needs.notify.outputs.notified_at }}
         run: |
+          BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
+          CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           offset=0
           if [ -z "$SINCE" ]; then
             echo "::error::notified_at output was empty - check the notify job log"
@@ -65,11 +67,11 @@ jobs:
           fi
           echo "Polling for a reply newer than timestamp $SINCE..."
           while true; do
-            updates=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&timeout=20")
-            newest=$(echo "$updates" | jq -r --argjson chat "${TELEGRAM_CHAT_ID}" --argjson since "${SINCE}" '
+            updates=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${offset}&timeout=20")
+            newest=$(echo "$updates" | jq -r --argjson chat "${CHAT_ID}" --argjson since "${SINCE}" '
               [ .result[] | select(.message.chat.id == $chat and (.message.date > $since)) ]
               | if length > 0 then sort_by(.message.date)[-1].message.text else empty end')
-            echo "$updates" | jq -r '.result[-1].update_id + 1 // 0' | { read offset; }
+            offset=$(echo "$updates" | jq -r '.result[-1].update_id + 1 // 0')
             if [ -n "$newest" ]; then
               if echo "$newest" | grep -qiE '^(y|yes|approve)\b'; then
                 echo "approved=yes" >> "$GITHUB_OUTPUT"
@@ -78,6 +80,10 @@ jobs:
               elif echo "$newest" | grep -qiE '^(n|no|reject)\b'; then
                 echo "Rejected by user."
                 exit 1
+              else
+                curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                  --data-urlencode "chat_id=${CHAT_ID}" \
+                  --data-urlencode "text=Only YES or NO is acceptable. Reply YES to run checks and merge, or NO to reject."
               fi
             fi
           done
@@ -86,6 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     needs: wait-for-approval
+
     if: needs.wait-for-approval.outputs.approved == 'yes'
     steps:
       - uses: actions/checkout@v4
