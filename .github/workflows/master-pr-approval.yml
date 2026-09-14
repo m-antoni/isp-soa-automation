@@ -12,11 +12,7 @@ permissions:
 jobs:
   notify:
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     environment: production
-=======
-    environment: development
->>>>>>> 53aa591 (use development environment so telegram secrets are available)
     outputs:
       notified_at: ${{ steps.send.outputs.ts }}
     steps:
@@ -49,11 +45,7 @@ jobs:
 
   wait-for-approval:
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     environment: production
-=======
-    environment: development
->>>>>>> 53aa591 (use development environment so telegram secrets are available)
     needs: notify
     timeout-minutes: 30
     outputs:
@@ -92,12 +84,9 @@ jobs:
 
   merge:
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     environment: production
-=======
-    environment: development
->>>>>>> 53aa591 (use development environment so telegram secrets are available)
     needs: wait-for-approval
+
     if: needs.wait-for-approval.outputs.approved == 'yes'
     steps:
       - uses: actions/checkout@v4
