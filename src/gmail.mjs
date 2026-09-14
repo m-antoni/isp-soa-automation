@@ -35,6 +35,14 @@ async function getGmailAccessToken() {
 //   2. Decode the newest few message bodies (recursively).
 //   3. Extract the code from the Subject header (most reliable) and/or the body.
 //   The email can take a few seconds to arrive, so it retries a few times.
+// Gmail returns the newest message first, but multiple OTP emails can coexist
+// in the inbox (e.g. a previous run's code still sitting there). We scan at
+// most the 5 most recent messages, collect all 6-char OTP codes we find, dedupe
+// them (newest-message-first ordering), and return the array. The caller tries
+// each candidate until one validates; setting this higher adds latency (each
+// message is a round-trip to Gmail).
+const MAX_OTP_CANDIDATES = 5;
+
 export async function fetchOtpFromGmail() {
   const accessToken = await getGmailAccessToken();
   const headers = { Authorization: `Bearer ${accessToken}` };
@@ -65,7 +73,9 @@ export async function fetchOtpFromGmail() {
       if (messages.length === 0) continue;
 
       const codes = [];
-      for (const { id } of messages.slice(0, 5)) {
+      // Only scan the most recent MAX_OTP_CANDIDATES messages; older OTPs are
+      // almost certainly stale or already expired.
+      for (const { id } of messages.slice(0, MAX_OTP_CANDIDATES)) {
         const msg = await (
           await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,

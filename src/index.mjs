@@ -87,18 +87,34 @@ export const handler = async (event, context) => {
   console.log("OTP CANDIDATES FROM GMAIL", otpCandidates);
 
   let verifyOTP = null;
+  const failedOtps = [];
+  // Try every candidate (newest first). Do NOT stop on a single failure: a
+  // rejected/errored OTP is recorded and the next candidate is attempted, so
+  // one stale code can't sink the run. Only after ALL candidates have failed
+  // do we log the failures and throw so the invocation goes red.
   for (const otp of otpCandidates) {
-    verifyOTP = await validateOTP({
-      acct_no: config.CONVERGE_ACCOUNT_NO,
-      token: otp,
-    });
-    console.log("VERIFY OTP", otp, JSON.stringify(verifyOTP));
+    try {
+      verifyOTP = await validateOTP({
+        acct_no: config.CONVERGE_ACCOUNT_NO,
+        token: otp,
+      });
+      console.log("VERIFY OTP", otp, JSON.stringify(verifyOTP));
+    } catch (error) {
+      failedOtps.push({ otp, error: error.message });
+      console.error("VERIFY OTP FAILED", otp, "->", error.message);
+      continue;
+    }
+
     if (verifyOTP?.success) break;
+    failedOtps.push({ otp, error: "validation rejected" });
   }
 
   if (!verifyOTP?.success) {
+    console.error("ALL OTP CANDIDATES FAILED", JSON.stringify(failedOtps));
     throw new Error(
-      `OTP validation failed for all candidates: ${JSON.stringify(otpCandidates)}`
+      `OTP validation failed for all candidates. Failed OTPs: ${JSON.stringify(
+        failedOtps
+      )}`
     );
   }
 
@@ -184,7 +200,11 @@ async function validateOTP(payload = {}) {
   });
 
   if (!response.ok) {
-    throw new Error(`OTP validation HTTP error! Status: ${response.status}`);
+    if (response.status >= 500) {
+      throw new Error(`OTP validation HTTP error! Status: ${response.status}`);
+    }
+    const body = await response.text();
+    return { success: false, status: response.status, body };
   }
 
   return await response.json();
