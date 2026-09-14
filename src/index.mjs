@@ -122,7 +122,7 @@ export const handler = async (event, context) => {
             file_name: fileName,
             email_sent_from: config.MAIL_FROM,
             email_sent_to: config.MAIL_TO.split(","),
-            timestamp: now.toISOString(),
+            timestamp: new Date().toISOString(),
           },
         }),
       };
