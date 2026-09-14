@@ -287,7 +287,7 @@ async function decryptSoaPdf(soaBuffer, password) {
 // File name always uses the 15th as the day (e.g. SOA-2026-01-15.pdf).
 function soaFileNames() {
   const now = new Date();
-  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   return {
