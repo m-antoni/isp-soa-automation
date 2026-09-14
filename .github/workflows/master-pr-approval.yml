@@ -12,6 +12,7 @@ permissions:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    environment: development
     outputs:
       notified_at: ${{ steps.send.outputs.ts }}
     steps:
@@ -44,6 +45,7 @@ jobs:
 
   wait-for-approval:
     runs-on: ubuntu-latest
+    environment: development
     needs: notify
     timeout-minutes: 30
     outputs:
@@ -82,6 +84,7 @@ jobs:
 
   merge:
     runs-on: ubuntu-latest
+    environment: development
     needs: wait-for-approval
     if: needs.wait-for-approval.outputs.approved == 'yes'
     steps:
