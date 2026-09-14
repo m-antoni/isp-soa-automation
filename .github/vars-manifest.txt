@@ -1,0 +1,8 @@
+# GitHub Actions variables (vars.) referenced by workflows (.github/workflows/*.yml).
+# Kept name-only; actual values live in the GitHub repo/`environment` settings.
+# CI fails if a workflow references a var name not listed here.
+AWS_REGION
+CONVERGE_API_URL
+MAIL_TO
+SAM_PACKAGING_BUCKET
+SOA_BUCKET_NAME

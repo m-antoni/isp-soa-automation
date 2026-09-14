@@ -22,8 +22,12 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 
 | Step | Purpose |
 | ---- | ------- |
-| `actions/checkout` | Checks out the code |
+| `actions/checkout` | Checks out the code, full history (`fetch-depth: 0`) so gitleaks can scan every commit |
+| Validate secrets/vars references | Fails the run if any `secrets.*` / `vars.*` used in a workflow is missing from `.github/secrets-manifest.txt` / `.github/vars-manifest.txt` |
 | `rhysd/actionlint` | Lints all workflow YAML files (catches syntax errors, schema violations, bad expressions) |
+| gitleaks (v8.30.1) | Scans full git history for leaked secrets — any finding fails the run |
+| `actions/setup-python` (3.12) | Installs Python only to run the spell checker; not part of the Lambda runtime |
+| codespell | Spell-checks all source/docs files, skipping `node_modules`, lockfiles and `.git` |
 | `aws-actions/setup-sam` | Installs the SAM CLI |
 | `sam validate --lint` | Validates `template.yaml` against the SAM/CloudFormation schema |
 | `actions/setup-node` (22) | Installs Node.js 22 (same runtime as the Lambda) |

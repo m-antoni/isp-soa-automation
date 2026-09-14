@@ -15,9 +15,11 @@ Built with the AWS Serverless Application Model (SAM):
 ```
 .
 ├── .github/workflows/                    # GitHub Actions
-│   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit)
+│   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit, spell, leaks)
 │   ├── deploy-dev.yml                    # Deploy stack to dev on push to `dev`
 │   └── approve-merge-to-master.yml        # Telegram approve-to-merge for PRs to `master`
+├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
+├── .github/vars-manifest.txt             # Allowlisted vars.NAMEs used in workflows
 ├── docs/                                 # Setup guides
 │   ├── github_actions.md                 # All workflows explained
 │   ├── telegram-approval.md              # Telegram bot + approve-to-merge setup
@@ -213,12 +215,16 @@ Runs on every push and pull request:
 
 | Step | What it does |
 | ---- | ------------ |
+| Validate secrets/vars | Fails if any `secrets.*`/`vars.*` used in a workflow isn't in `.github/secrets-manifest.txt` / `.github/vars-manifest.txt` |
 | `actionlint` | Lints all GitHub Actions workflow YAML files |
+| gitleaks | Scans full git history for leaked secrets |
+| codespell | Spell-checks all source/docs files |
 | `sam validate --lint` | Validates `template.yaml` |
 | `npm test` | Runs the Vitest unit test suite |
 | `npm audit --audit-level=high` | Fails on high/critical CVEs |
 
-A concurrency group prevents duplicate runs for the same branch.
+A concurrency group prevents duplicate runs for the same branch. Details for all
+three workflows (orders, triggers, secrets used): **[docs/github_actions.md](docs/github_actions.md)**.
 
 ## Local testing
 
