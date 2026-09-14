@@ -110,10 +110,18 @@ button for you (the normal workflow token is not allowed to merge to `master`).
      (or **All repositories** if you want to reuse this one token on other repos)
 6. Scroll to **Permissions** and find the **Repository permissions** list. Do
    this twice, once for each name:
+   - Type `Pull requests` in the search → select it → choose **Read and write**
    - Type `Contents` in the search → select it → in the new menu next to it
      choose **Read and write**
-   - Type `Pull requests` in the search → select it → choose **Read and write**
    - Leave **Metadata** at **Read-only** (GitHub requires it — don't touch it)
+
+   > **Both permissions are required.** Without `Pull requests: Read and write`
+   > the merge is denied; without `Contents: Read and write` the merge fails with
+   > `GraphQL: Resource not accessible by personal access token` (the squash merge
+   > and branch delete also need repo write access). If you already created the
+   > token, click **Edit** on it and add whichever is missing — the token value
+   > stays the same, so you only need to re-copy it into the secret if you
+   > regenerated it.
 7. Click **Generate token** at the bottom.
 8. **Copy the new token immediately** (starts with `github_pat_...`). GitHub
    shows it only once. This is your `GH_BOT_TOKEN`.
