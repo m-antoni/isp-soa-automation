@@ -227,8 +227,53 @@ Keep `samconfig.toml`, `.env`, and secrets out of version control (already handl
 
 ## Local testing
 
+### Quick run (no Docker)
+
+Loads `.env` from the project root and invokes the handler directly.
+
 ```bash
-# Build and invoke the function with a sample event
+# From the src/ directory
+npm run local
+```
+
+This reads `.env`, runs the full handler (OTP → download → decrypt → upload → email),
+and prints the result. While the handler awaits network calls (the OTP email can
+take ~60s), a `Working...` spinner is shown on stderr so the terminal doesn't just
+hang; the success response is pretty-printed as JSON.
+
+`local.mjs` is a thin local-only wrapper: it loads `.env`, invokes
+`index.handler`, and prints the outcome. Nothing here runs in production.
+
+**Sample output (success):** the `body` is parsed and pretty-printed as JSON:
+
+```json
+{
+  "statusCode": 200,
+  "body": {
+    "status": "Success",
+    "message": "ISP SOA Automation Trigger Success.",
+    "otp": "U6AC8T",
+    "s3": "soa/1464602714620/2026-09/SOA-2026-09-30.pdf",
+    "file_name": "SOA-2026-09-30.pdf",
+    "email_sent_from": "michaelantoni.tech@gmail.com",
+    "email_sent_to": [
+      "michaelantoni.tech@gmail.com",
+      "m.antoni@accenture.com"
+    ],
+    "timestamp": "2026-09-14T07:01:30.292Z"
+  }
+}
+```
+
+**Sample output (failure):** the invocation exits non-zero with the last error:
+
+```text
+HANDLER FAILED: OTP validation failed for all candidates. Failed OTPs: [{"otp":"R2SJ2B","error":"validation rejected"}]
+```
+
+### SAM local invoke (Docker required)
+
+```bash
 sam local invoke SoaAutomationFunction -e events/event.json \
   --parameter-overrides \
     "UserEmail=test@example.com UserMobile=09000000000 \

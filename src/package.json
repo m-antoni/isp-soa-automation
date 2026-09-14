@@ -4,6 +4,7 @@
   "description": "Lambda for retrieving Converge SOA and delivering it",
   "main": "index.mjs",
   "scripts": {
+    "local": "node local.mjs",
     "test": "echo \"no tests\""
   },
   "dependencies": {

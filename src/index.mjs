@@ -73,6 +73,11 @@ export const handler = async (event, context) => {
   });
   console.log("SEND OTP", JSON.stringify(sendOTP));
 
+  // Converge invalidates the previous OTP whenever a new one is sent, so only
+  // look for the email that arrives AFTER this send - anything older in the
+  // inbox belongs to an earlier run and is guaranteed to fail validation.
+  const otpSentAt = Date.now();
+
   if (!sendOTP?.success || !sendOTP?.data) {
     throw new Error(
       `OTP send failed. Response: ${JSON.stringify(sendOTP ?? "no response")}`
@@ -83,10 +88,11 @@ export const handler = async (event, context) => {
   // OTP candidates from GMAIL, newest message first. Multiple OTP emails can
   // coexist in the inbox (e.g. from a previous run), so try them until one
   // validates rather than relying on a single code.
-  const otpCandidates = await fetchOtpFromGmail();
+  const otpCandidates = await fetchOtpFromGmail({ since: otpSentAt });
   console.log("OTP CANDIDATES FROM GMAIL", otpCandidates);
 
   let verifyOTP = null;
+  let validatedOtp = null;
   const failedOtps = [];
   // Try every candidate (newest first). Do NOT stop on a single failure: a
   // rejected/errored OTP is recorded and the next candidate is attempted, so
@@ -98,14 +104,17 @@ export const handler = async (event, context) => {
         acct_no: config.CONVERGE_ACCOUNT_NO,
         token: otp,
       });
-      console.log("VERIFY OTP", otp, JSON.stringify(verifyOTP));
+      console.log("VERIFY OTP", otp, summarizeOtpResponse(verifyOTP));
     } catch (error) {
       failedOtps.push({ otp, error: error.message });
       console.error("VERIFY OTP FAILED", otp, "->", error.message);
       continue;
     }
 
-    if (verifyOTP?.success) break;
+    if (verifyOTP?.success) {
+      validatedOtp = otp;
+      break;
+    }
     failedOtps.push({ otp, error: "validation rejected" });
   }
 
@@ -120,11 +129,9 @@ export const handler = async (event, context) => {
 
   // ** Step 4: GET {CONVERGE_API_URL}/soa/{acct_no}/{token}/{items[0].slug}/ to download the latest PDF
   const soaBuffer = await downloadPdf(verifyOTP);
-  console.log("SOA PDF BYTES", soaBuffer.length);
 
   // Step 5: Unlock the encrypted PDF with the account password via qpdf.
   const unlockedBytes = await decryptSoaPdf(soaBuffer, config.PDF_PASSWORD);
-  console.log("UNLOCKED PDF BYTES", unlockedBytes.length);
 
   // Step 6: Upload the unlocked PDF to the SOA bucket.
   const { month, fileName } = soaFileNames();
@@ -146,6 +153,7 @@ export const handler = async (event, context) => {
     body: JSON.stringify({
       status: "Success",
       message: "ISP SOA Automation Trigger Success.",
+      otp: validatedOtp,
       s3: s3Key,
       file_name: fileName,
       email_sent_from: config.MAIL_FROM,
@@ -208,6 +216,25 @@ async function validateOTP(payload = {}) {
   }
 
   return await response.json();
+}
+
+// ** Summarize a validateOTP response for logging - the full response carries a
+// large items array (every billing period's PDF), which is noise in both local
+// runs and CloudWatch. Only success, errors, token presence and item count/slug
+// are printed.
+function summarizeOtpResponse(response) {
+  const { success, errors, data } = response ?? {};
+  const inner = data ?? {};
+  const items = inner.items ?? data?.data?.items ?? [];
+  return JSON.stringify({
+    success,
+    errors,
+    hasToken: Boolean(
+      inner.token ?? inner.session_token ?? inner.sessionToken
+    ),
+    itemCount: items.length,
+    firstItemSlug: items[0]?.slug,
+  });
 }
 
 // ** Download the latest SOA PDF

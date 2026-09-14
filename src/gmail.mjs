@@ -43,15 +43,21 @@ async function getGmailAccessToken() {
 // message is a round-trip to Gmail).
 const MAX_OTP_CANDIDATES = 5;
 
-export async function fetchOtpFromGmail() {
+// `since` restricts the search to emails that arrived after the given epoch ms
+// (the moment the OTP was just sent). Converge invalidates the previous OTP on
+// every new send, so without this filter a stale code from an earlier run can
+// surface as the "newest" and fail validation.
+export async function fetchOtpFromGmail({ since } = {}) {
   const accessToken = await getGmailAccessToken();
   const headers = { Authorization: `Bearer ${accessToken}` };
 
   // Queries tried in order; the subject fallback covers cases where the
-  // from: index or sender formatting differs across Gmail clients.
+  // from: index or sender formatting differs across Gmail clients. `after:`
+  // takes a unix timestamp in seconds and drops anything older than this run.
+  const afterClause = since ? ` after:${Math.floor(since / 1000)}` : "";
   const queries = [
-    "from:noreply@soa.convergeict.com newer_than:2h",
-    'subject:"Confirmation Code" newer_than:2h',
+    `from:noreply@soa.convergeict.com newer_than:2h${afterClause}`,
+    `subject:"Confirmation Code" newer_than:2h${afterClause}`,
   ];
 
   for (let attempt = 0; attempt < 6; attempt += 1) {
