@@ -1,7 +1,7 @@
 # CI — quality gates on every push and pull request.
 #
 # Sections:
-# - on: triggers — push (any branch) + pull_request, ignoring docs-only changes
+# - on: triggers — every push (any branch) + every pull request
 # - concurrency: one run per branch at a time; a newer run cancels an older one
 # - permissions: contents: read (least privilege)
 # - jobs.check steps in order:
@@ -19,13 +19,7 @@ name: CI
 on:
   push:
     branches: ["**"]
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
 
 concurrency:
   group: ci-${{ github.ref }}

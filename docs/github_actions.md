@@ -16,7 +16,7 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 
 ## 1. CI (`.github/workflows/ci.yml`)
 
-**Triggers:** every push to any branch and every pull request. Skipped for doc-only changes (`docs/**` and `**/*.md`).
+**Triggers:** every push to any branch and every pull request. (Docs are *not* skipped — a push that only changes `.md` docs still runs CI so gitleaks scans for secrets in them.)
 
 **What it does:**
 
