@@ -28,21 +28,19 @@ Built with the AWS Serverless Application Model (SAM):
 
 These are the runtime packages bundled with the function. `sam build` installs them from `src/package.json` into the deployment package.
 
-| Package                        | Purpose                                                                                                                              |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `@aws-sdk/client-s3`           | Uploads the unlocked SOA PDF to the staging bucket (`PutObjectCommand`).                                                             |
-| `@aws-sdk/signature-v4`        | Computes the SigV4 signature for the SES `SendRawEmail` HTTP request.                                                                |
-| `@smithy/protocol-http`        | Provides the `HttpRequest` object the signer and `fetch` work against.                                                               |
-| `@aws-sdk/credential-providers`| `fromNodeProviderChain()` resolves the Lambda IAM role credentials (falls back to `~/.aws` locally) for signing.                      |
-| `@aws-crypto/sha256-js`        | Pure-JS SHA-256 used by SigV4 to hash the request payload and canonical headers.                                                      |
-| `@neslinesli93/qpdf-wasm`      | qpdf compiled to WebAssembly; decrypts the password-protected SOA PDF (`--password=X --decrypt`).                                    |
-| `pdf-lib`                      | Validates the decrypted PDF (parses it back) and generates the earlier MIME attachment.                                               |
+| Package                        | Purpose                                                                                              |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `@aws-sdk/client-s3`           | Uploads the unlocked SOA PDF to the staging bucket (`PutObjectCommand`).                             |
+| `nodemailer`                   | Sends the SOA email with the PDF attachment via Gmail SMTP (`smtp.gmail.com:465`).                    |
+| `@neslinesli93/qpdf-wasm`      | qpdf compiled to WebAssembly; decrypts the password-protected SOA PDF (`--password=X --decrypt`).    |
+| `pdf-lib`                      | Validates the decrypted PDF (parses it back) after unlocking.                                        |
 
-Why no `@aws-sdk/client-ses`? The current SDK generation's Query-protocol serializer
-silently drops `RawMessage.Data`, so SES rejects the email with
-`rawMessage: Member must not be null`. The Lambda therefore builds and SigV4-signs
-the `SendRawEmail` request by hand (`sendPdfEmail` in `src/index.mjs`) instead of
-using the SES client — removing the dependency also shrinks the bundle.
+Why Gmail SMTP and not AWS SES? SES cannot legitimately send from a `@gmail.com`
+address: Google's SPF/DKIM/DMARC records only authorize Google's own servers to
+send as Gmail, so an email claiming to be from `@gmail.com` over SES fails all
+three checks and is flagged as spam. Using `nodemailer` against Gmail SMTP goes
+out through Google's servers as the real account, so it lands in the inbox.
+It only needs an App Password (never the Gmail account password).
 
 Why not `pdf-lib` for unlocking? pdf-lib cannot decrypt password-protected PDFs at
 all; it throws `EncryptedPDFError` for any encrypted document, regardless of the
@@ -64,8 +62,9 @@ The Lambda reads these from its runtime environment (`process.env`). Values are 
 | `GMAIL_CLIENT_ID`      | Google OAuth2 client ID for the Gmail API    | ✓        |
 | `GMAIL_CLIENT_SECRET`  | Google OAuth2 client secret                  | ✓        |
 | `GMAIL_REFRESH_TOKEN`  | Offline refresh token for Gmail API access   | ✓        |
-| `MAIL_FROM`            | SES sender address (verified identity)       | ✓        |
-| `MAIL_TO`              | Recipient address for the SOA PDF            | ✓        |
+| `MAIL_FROM`            | Gmail sender account (sends via Gmail SMTP) | ✓        |
+| `MAIL_TO`              | Recipient(s) for the SOA PDF (comma-separated for multiple) | ✓        |
+| `GMAIL_SMTP_APP_PASSWORD` | Gmail App Password for `MAIL_FROM`        | ✓        |
 
 ## Deploy Parameters
 
@@ -86,29 +85,34 @@ CloudFormation parameters you pass on deploy (mapped to the function env in `tem
 | `GmailClientId`   | —                                | Google OAuth2 client ID        |
 | `GmailClientSecret` | —                            | NoEcho (secret), required      |
 | `GmailRefreshToken` | —                           | NoEcho (secret), required      |
-| `MailFrom`          | —                            | Verified SES identity          |
-| `MailTo`            | —                            | Recipient email                |
+| `MailFrom`          | `michaelantoni.tech@gmail.com` | Gmail sender account        |
+| `MailTo`            | `michaelantoni.tech@gmail.com` | Recipient(s), comma-separated  |
+| `GmailAppPassword`  | —                         | NoEcho (secret), Gmail App Password |
 
-## Emailing the SOA PDF (AWS SES)
+## Emailing the SOA PDF (Gmail SMTP)
 
-The unlocked PDF is emailed by the Lambda itself using **AWS SES** (`SendRawEmail`
-with a MIME attachment), so no SMTP app passwords are needed. The request is built
-and SigV4-signed by the Lambda directly (see "Lambda Dependencies" for why the SES
-client is not used). The function's IAM role is granted `ses:SendRawEmail` in
-`template.yaml`.
+The unlocked PDF is emailed by the Lambda itself using **nodemailer** against
+**Gmail SMTP** (`smtp.gmail.com:465`) with the PDF attached. Mail goes out through
+Google's own servers as the `MAIL_FROM` Gmail account, so SPF/DKIM/DMARC all pass
+and it lands in the inbox (using SES to send from a `@gmail.com` address causes
+spam-filtering).
 
-Setup in AWS Console (SES):
+Setup:
 
-1. Verify the `MailFrom` sender address as a SES identity.
-2. SES starts in **sandbox** mode: you can only send to verified recipients
-   (make sure `MailTo` is verified too) and sending limits are low. Request
-   production access (`SES > Account dashboard > Request production access`) to
-   lift the sandbox restrictions.
-3. If your `MailFrom` domain differs from the address, set up DKIM/DMARC
-   optionally.
+1. **Enable 2-Step Verification** on the `MAIL_FROM` Gmail account.
+2. Create an **App Password**: Google Account → Security → App Passwords →
+   generate one (16 characters, spaces are ignored).
+3. Put it in the GitHub secret `GMAIL_SMTP_APP_PASSWORD` (and in
+   `samconfig.toml` → `GmailAppPassword` for local deploys).
+4. `MAIL_FROM` secret and `MAIL_TO` var/param control sender and recipient.
 
-The scheduled EventBridge rule (25th of each month) triggers the whole pipeline
-automatically; the GitHub Actions workflow only deploys.
+Scheduled EventBridge rules trigger the whole pipeline automatically; the
+GitHub Actions workflow only deploys:
+- `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
+- `isp-soa-automation-email` — every day at midnight Asia/Manila (a few days of
+  testing; 16:00 UTC so remove the rule or flip it to `DISABLED` when done).
+
+The Lambda can also be invoked manually anytime from the AWS Console **Test** tab.
 
 ## Prerequisites
 
@@ -223,8 +227,53 @@ Keep `samconfig.toml`, `.env`, and secrets out of version control (already handl
 
 ## Local testing
 
+### Quick run (no Docker)
+
+Loads `.env` from the project root and invokes the handler directly.
+
 ```bash
-# Build and invoke the function with a sample event
+# From the src/ directory
+npm run local
+```
+
+This reads `.env`, runs the full handler (OTP → download → decrypt → upload → email),
+and prints the result. While the handler awaits network calls (the OTP email can
+take ~60s), a `Working...` spinner is shown on stderr so the terminal doesn't just
+hang; the success response is pretty-printed as JSON.
+
+`local.mjs` is a thin local-only wrapper: it loads `.env`, invokes
+`index.handler`, and prints the outcome. Nothing here runs in production.
+
+**Sample output (success):** the `body` is parsed and pretty-printed as JSON:
+
+```json
+{
+  "statusCode": 200,
+  "body": {
+    "status": "Success",
+    "message": "ISP SOA Automation Trigger Success.",
+    "otp": "U6AC8T",
+    "s3": "soa/1464602714620/2026-09/SOA-2026-09-30.pdf",
+    "file_name": "SOA-2026-09-30.pdf",
+    "email_sent_from": "michaelantoni.tech@gmail.com",
+    "email_sent_to": [
+      "michaelantoni.tech@gmail.com",
+      "m.antoni@accenture.com"
+    ],
+    "timestamp": "2026-09-14T07:01:30.292Z"
+  }
+}
+```
+
+**Sample output (failure):** the invocation exits non-zero with the last error:
+
+```text
+HANDLER FAILED: OTP validation failed for all candidates. Failed OTPs: [{"otp":"R2SJ2B","error":"validation rejected"}]
+```
+
+### SAM local invoke (Docker required)
+
+```bash
 sam local invoke SoaAutomationFunction -e events/event.json \
   --parameter-overrides \
     "UserEmail=test@example.com UserMobile=09000000000 \

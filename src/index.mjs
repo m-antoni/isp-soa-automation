@@ -1,9 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { SignatureV4 } from "@aws-sdk/signature-v4";
-import { HttpRequest } from "@smithy/protocol-http";
-import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
-import { Sha256 } from "@aws-crypto/sha256-js";
+import nodemailer from "nodemailer";
 import createQpdfModule from "@neslinesli93/qpdf-wasm";
 import { fetchOtpFromGmail } from "./gmail.mjs";
 
@@ -37,6 +34,7 @@ const {
   GMAIL_REFRESH_TOKEN,
   MAIL_FROM,
   MAIL_TO,
+  GMAIL_SMTP_APP_PASSWORD,
 } = process.env;
 
 const config = {
@@ -51,6 +49,7 @@ const config = {
   GMAIL_REFRESH_TOKEN,
   MAIL_FROM,
   MAIL_TO,
+  GMAIL_SMTP_APP_PASSWORD,
 };
 
 for (const [key, value] of Object.entries(config)) {
@@ -58,7 +57,6 @@ for (const [key, value] of Object.entries(config)) {
 }
 
 export const handler = async (event, context) => {
-  // TODO: implement the pipeline. Steps to follow (see notes.md):
   // Step 1: POST {CONVERGE_API_URL}/ with { acct_no, is_tac, is_privacy_notice, is_converge }
   // const getAccount = await getAccountDetails({
   //   acct_no: CONVERGE_ACCOUNT_NO,
@@ -75,116 +73,168 @@ export const handler = async (event, context) => {
   });
   console.log("SEND OTP", JSON.stringify(sendOTP));
 
-  // ** Step 3: POST {CONVERGE_API_URL}/soa/validate/ with { acct_no, token: <otp> } -> session token + items
-  if (sendOTP.success && sendOTP.data) {
-    // OTP received from GMAIL
-    const otp = await fetchOtpFromGmail();
-    console.log("OTP FROM GMAIL", otp);
+  // Converge invalidates the previous OTP whenever a new one is sent, so only
+  // look for the email that arrives AFTER this send - anything older in the
+  // inbox belongs to an earlier run and is guaranteed to fail validation.
+  const otpSentAt = Date.now();
 
-    const verifyOTP = await validateOTP({
-      acct_no: config.CONVERGE_ACCOUNT_NO,
-      token: otp,
-    });
-    console.log("Verify OTP", JSON.stringify(verifyOTP));
-
-    // ** Step 4: GET {CONVERGE_API_URL}/soa/{acct_no}/{token}/{items[0].slug}/ to download the latest PDF
-    if (verifyOTP && verifyOTP.success) {
-      const soaBuffer = await downloadPdf(verifyOTP);
-      console.log("SOA PDF BYTES", soaBuffer.length);
-
-      // Step 5: Unlock the encrypted PDF with the account password via qpdf.
-      const unlockedBytes = await decryptSoaPdf(soaBuffer, config.PDF_PASSWORD);
-      console.log("UNLOCKED PDF BYTES", unlockedBytes.length);
-
-      // Step 6: Upload the unlocked PDF to the SOA bucket.
-      const { month, fileName } = soaFileNames();
-      const s3Key = `soa/${config.CONVERGE_ACCOUNT_NO}/${month}/${fileName}`;
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: config.SOA_BUCKET_NAME,
-          Key: s3Key,
-          Body: new Uint8Array(unlockedBytes),
-          ContentType: "application/pdf",
-        })
-      );
-      console.log("UPLOADED S3", s3Key);
-
-      // Step 7: Email the unlocked SOA PDF via SES.
-      await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ status: "SUCCESS", s3Key }),
-      };
-    }
+  if (!sendOTP?.success || !sendOTP?.data) {
+    throw new Error(
+      `OTP send failed. Response: ${JSON.stringify(sendOTP ?? "no response")}`
+    );
   }
 
+  // ** Step 3: POST {CONVERGE_API_URL}/soa/validate/ with { acct_no, token: <otp> } -> session token + items
+  // OTP candidates from GMAIL, newest message first. Multiple OTP emails can
+  // coexist in the inbox (e.g. from a previous run), so try them until one
+  // validates rather than relying on a single code.
+  const otpCandidates = await fetchOtpFromGmail({ since: otpSentAt });
+  console.log("OTP CANDIDATES FROM GMAIL", otpCandidates);
+
+  let verifyOTP = null;
+  let validatedOtp = null;
+  const failedOtps = [];
+  // Try every candidate (newest first). Do NOT stop on a single failure: a
+  // rejected/errored OTP is recorded and the next candidate is attempted, so
+  // one stale code can't sink the run. Only after ALL candidates have failed
+  // do we log the failures and throw so the invocation goes red.
+  for (const otp of otpCandidates) {
+    try {
+      verifyOTP = await validateOTP({
+        acct_no: config.CONVERGE_ACCOUNT_NO,
+        token: otp,
+      });
+      console.log("VERIFY OTP", otp, summarizeOtpResponse(verifyOTP));
+    } catch (error) {
+      failedOtps.push({ otp, error: error.message });
+      console.error("VERIFY OTP FAILED", otp, "->", error.message);
+      continue;
+    }
+
+    if (verifyOTP?.success) {
+      validatedOtp = otp;
+      break;
+    }
+    failedOtps.push({ otp, error: "validation rejected" });
+  }
+
+  if (!verifyOTP?.success) {
+    console.error("ALL OTP CANDIDATES FAILED", JSON.stringify(failedOtps));
+    throw new Error(
+      `OTP validation failed for all candidates. Failed OTPs: ${JSON.stringify(
+        failedOtps
+      )}`
+    );
+  }
+
+  // ** Step 4: GET {CONVERGE_API_URL}/soa/{acct_no}/{token}/{items[0].slug}/ to download the latest PDF
+  const soaBuffer = await downloadPdf(verifyOTP);
+
+  // Step 5: Unlock the encrypted PDF with the account password via qpdf.
+  const unlockedBytes = await decryptSoaPdf(soaBuffer, config.PDF_PASSWORD);
+
+  // Step 6: Upload the unlocked PDF to the SOA bucket.
+  const { month, fileName } = soaFileNames();
+  const s3Key = `soa/${config.CONVERGE_ACCOUNT_NO}/${month}/${fileName}`;
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: config.SOA_BUCKET_NAME,
+      Key: s3Key,
+      Body: new Uint8Array(unlockedBytes),
+      ContentType: "application/pdf",
+    })
+  );
+  console.log("PDF UPLOADED IN S3", s3Key);
+
+  // Step 7: Email the unlocked SOA PDF via Gmail SMTP.
+  await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
   return {
     statusCode: 200,
-    body: "SUCCESS",
+    body: JSON.stringify({
+      status: "Success",
+      message: "ISP SOA Automation Trigger Success.",
+      otp: validatedOtp,
+      s3: s3Key,
+      file_name: fileName,
+      email_sent_from: config.MAIL_FROM,
+      email_sent_to: config.MAIL_TO.split(","),
+      timestamp: new Date().toISOString(),
+    }),
   };
 };
 
 // ** Enter Account Details
 async function getAccountDetails(payload = {}) {
-  try {
-    const response = await fetch(`${config.CONVERGE_API_URL}/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${config.CONVERGE_API_URL}/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Something went wrong!: ", error);
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+
+  return await response.json();
 }
 
 // ** Sent OTP to email
 async function sendOtpViaEmail(payload = {}) {
-  try {
-    const response = await fetch(`${config.CONVERGE_API_URL}/soa/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${config.CONVERGE_API_URL}/soa/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Something went wrong!: ", error);
+  if (!response.ok) {
+    throw new Error(`OTP send HTTP error! Status: ${response.status}`);
   }
+
+  return await response.json();
 }
 
 // ** Validate the OTP
 async function validateOTP(payload = {}) {
-  try {
-    const response = await fetch(`${config.CONVERGE_API_URL}/soa/validate/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${config.CONVERGE_API_URL}/soa/validate/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+  if (!response.ok) {
+    if (response.status >= 500) {
+      throw new Error(`OTP validation HTTP error! Status: ${response.status}`);
     }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Something went wrong!: ", error);
+    const body = await response.text();
+    return { success: false, status: response.status, body };
   }
+
+  return await response.json();
+}
+
+// ** Summarize a validateOTP response for logging - the full response carries a
+// large items array (every billing period's PDF), which is noise in both local
+// runs and CloudWatch. Only success, errors, token presence and item count/slug
+// are printed.
+function summarizeOtpResponse(response) {
+  const { success, errors, data } = response ?? {};
+  const inner = data ?? {};
+  const items = inner.items ?? data?.data?.items ?? [];
+  return JSON.stringify({
+    success,
+    errors,
+    hasToken: Boolean(
+      inner.token ?? inner.session_token ?? inner.sessionToken
+    ),
+    itemCount: items.length,
+    firstItemSlug: items[0]?.slug,
+  });
 }
 
 // ** Download the latest SOA PDF
@@ -233,7 +283,9 @@ async function decryptSoaPdf(soaBuffer, password) {
     qpdf.callMain([inPath, "--decrypt", `--password=${password}`, outPath]);
   } catch (error) {
     throw new Error(
-      `qpdf decrypt failed (check PDF_PASSWORD): ${qpdfStderr.join(" ") || error.message}`
+      `qpdf decrypt failed (check PDF_PASSWORD): ${
+        qpdfStderr.join(" ") || error.message
+      }`
     );
   } finally {
     try {
@@ -267,7 +319,9 @@ async function decryptSoaPdf(soaBuffer, password) {
       JSON.stringify(inspectPdfEncryption(soaBuffer))
     );
     throw new Error(
-      `qpdf produced an unusable PDF: ${error.message}. qpdf: ${qpdfStderr.join(" ")}`
+      `qpdf produced an unusable PDF: ${error.message}. qpdf: ${qpdfStderr.join(
+        " "
+      )}`
     );
   }
   return decrypted;
@@ -277,11 +331,12 @@ async function decryptSoaPdf(soaBuffer, password) {
 // File name always uses the 15th as the day (e.g. SOA-2026-01-15.pdf).
 function soaFileNames() {
   const now = new Date();
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   return {
     month: `${yyyy}-${mm}`,
-    fileName: `SOA-${yyyy}-${mm}-15.pdf`,
+    fileName: `SOA-${yyyy}-${mm}-${lastDayOfMonth.getDate()}.pdf`,
   };
 }
 
@@ -313,90 +368,41 @@ function inspectPdfEncryption(bytes) {
   return details;
 }
 
-// ** Build a MIME multipart/mixed message with the SOA PDF as an attachment.
-function buildMimeMessage({ to, from, subject, body, fileName, pdfBuffer }) {
-  const boundary = `----isp-soa-${Date.now()}`;
-  const content = [
-    "MIME-Version: 1.0",
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: 7bit",
-    "",
-    body,
-    `--${boundary}`,
-    `Content-Type: application/pdf; name="${fileName}"`,
-    `Content-Disposition: attachment; filename="${fileName}"`,
-    "Content-Transfer-Encoding: base64",
-    "",
-    pdfBuffer.toString("base64"),
-    `--${boundary}--`,
-  ].join("\r\n");
-
-  return Buffer.from(content, "utf8");
-}
-
-// ** Send the unlocked SOA PDF via SES (SendRawEmail supports attachments).
-// Uses a hand-rolled AWS Query request: the AWS SDK v3 Query-protocol
-// serializer currently drops `RawMessage.Data` ("Member must not be null"),
-// so we build + SigV4-sign the request ourselves.
+// ** Send the unlocked SOA PDF via Gmail SMTP (Google's own servers, so the
+// mail isn't flagged as spam). Uses an App Password, not the account password.
+// MAIL_TO may hold multiple comma-separated recipients.
 async function sendPdfEmail({ fileName, buffer }) {
-  const raw = buildMimeMessage({
-    to: config.MAIL_TO,
-    from: config.MAIL_FROM,
-    subject: `Your Converge SOA (${fileName})`,
-    body: "The latest Converge Statement of Account is attached.",
-    fileName,
-    pdfBuffer: buffer,
-  });
-
-  const region = process.env.AWS_REGION ?? "ap-southeast-1";
-  const host = `email.${region}.amazonaws.com`;
-  const queryBody = [
-    "Action=SendRawEmail",
-    "Version=2010-12-01",
-    `RawMessage.Data=${encodeURIComponent(raw.toString("base64"))}`,
-  ].join("&");
-
-  const request = new HttpRequest({
-    method: "POST",
-    protocol: "https:",
-    hostname: host,
-    path: "/",
-    headers: {
-      host,
-      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+  const mailer = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user: config.MAIL_FROM,
+      pass: config.GMAIL_SMTP_APP_PASSWORD,
     },
-    body: queryBody,
   });
 
-  const signer = new SignatureV4({
-    credentials: fromNodeProviderChain(),
-    region,
-    service: "ses",
-    sha256: Sha256,
-  });
-  const signed = await signer.sign(request);
+  // separated commas for multiple emails ex. "michael@mail.com,antoni@mail.com"
+  const recipients = [
+    ...new Set(
+      config.MAIL_TO.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    ),
+  ];
 
-  const response = await fetch(`https://${host}/`, {
-    method: "POST",
-    headers: signed.headers,
-    body: signed.body,
-  });
-  const xml = await response.text();
-
-  if (!response.ok) {
-    const code = /<Code>([^<]*)<\/Code>/.exec(xml)?.[1];
-    const message = /<Message>([^<]*)<\/Message>/.exec(xml)?.[1];
-    throw new Error(
-      `SES send failed (${code ?? response.status}): ${message ?? xml.slice(0, 400)}`
-    );
+  try {
+    const now = new Date();
+    const monthName = now.toLocaleString("default", { month: "long" });
+    const info = await mailer.sendMail({
+      from: config.MAIL_FROM,
+      to: recipients,
+      subject: `Converge SOA Month of ${monthName}. (${fileName})`,
+      text: "The latest Converge Statement of Account is attached.",
+      attachments: [{ filename: fileName, content: buffer }],
+    });
+    console.log("EMAIL SENT VIA GMAIL SMTP", fileName, info.messageId ?? "");
+  } finally {
+    mailer.close();
   }
-
-  const messageId = /<MessageId>([^<]*)<\/MessageId>/.exec(xml)?.[1];
-  console.log("EMAIL SENT VIA SES", fileName, messageId ?? "");
 }

@@ -4,15 +4,13 @@
   "description": "Lambda for retrieving Converge SOA and delivering it",
   "main": "index.mjs",
   "scripts": {
+    "local": "node local.mjs",
     "test": "echo \"no tests\""
   },
   "dependencies": {
-    "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-s3": "^3.0.0",
-    "@aws-sdk/credential-providers": "^3.1131.0",
-    "@aws-sdk/signature-v4": "^3.370.0",
     "@neslinesli93/qpdf-wasm": "^0.3.0",
-    "@smithy/protocol-http": "^5.6.2",
+    "nodemailer": "^10.0.9",
     "pdf-lib": "^1.17.1"
   }
 }
