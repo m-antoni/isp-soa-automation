@@ -195,32 +195,6 @@ Resources:
         App: isp-soa-automation
         Environment: !Ref Environment
 
-  # Daily EventBridge rule (test): fire the pipeline every midnight in the
-  # local (Philippines) timezone so the full flow can be exercised for a few
-  # days. Uses a raw rule (not the SAM shorthand) so it can be clearly named.
-  DailyEmailSchedule:
-    Type: AWS::Events::Rule
-    Properties:
-      Name: isp-soa-automation-email
-      # 16:00 UTC = 00:00 Asia/Manila (UTC+8, no DST). EventBridge cron itself
-      # has no timezone setting, and the SAM shorthand can't take one either,
-      # so the schedule is expressed in UTC with the +8 offset baked in.
-      ScheduleExpression: cron(0 16 * * ? *)
-      State: ENABLED
-      Description: Trigger the SOA pipeline daily at midnight Manila time
-      Targets:
-        - Arn: !GetAtt SoaAutomationFunction.Arn
-          Id: SoaAutomationFunction
-
-  # Allow EventBridge to invoke the Lambda for the daily schedule above.
-  DailyEmailPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref SoaAutomationFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt DailyEmailSchedule.Arn
-
   # Private bucket that temporarily holds the downloaded/unlocked SOA PDF
   # before it is emailed, then auto-expired.
   SoaBucket:

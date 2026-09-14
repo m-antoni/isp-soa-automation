@@ -123,8 +123,7 @@ Scheduled EventBridge rules trigger the whole pipeline automatically; the
 GitHub Actions workflow only deploys:
 
 - `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
-- `isp-soa-automation-email` — every day at midnight Asia/Manila (a few days of
-  testing; 16:00 UTC so remove the rule or flip it to `DISABLED` when done).
+- `isp-soa-automation-email` — **removed** (was a daily-midnight test rule).
 
 The Lambda can also be invoked manually anytime from the AWS Console **Test** tab.
 
