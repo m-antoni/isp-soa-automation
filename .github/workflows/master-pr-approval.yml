@@ -1,0 +1,88 @@
+name: Approve & merge PR to master
+
+on:
+  pull_request:
+    types: [opened]
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    outputs:
+      notified_at: ${{ steps.send.outputs.ts }}
+    steps:
+      - name: Send Telegram notification
+        id: send
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          TITLE="${{ github.event.pull_request.title }}"
+          URL="${{ github.event.pull_request.html_url }}"
+          MSG="New PR #${PR} '${TITLE}' wants to merge into master.
+          ${URL}
+          Reply YES to run checks and merge, or NO to reject."
+          RESP=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}")
+          echo "$RESP"
+          echo "ts=$(echo "$RESP" | jq -r '.result.date')" >> "$GITHUB_OUTPUT"
+
+  wait-for-approval:
+    runs-on: ubuntu-latest
+    needs: notify
+    timeout-minutes: 30
+    outputs:
+      approved: ${{ steps.poll.outputs.approved }}
+    steps:
+      - name: Wait for approval reply
+        id: poll
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SINCE: ${{ needs.notify.outputs.notified_at }}
+        run: |
+          offset=0
+          while true; do
+            updates=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&timeout=20")
+            newest=$(echo "$updates" | jq -r --argjson chat "${TELEGRAM_CHAT_ID}" --argjson since "${SINCE}" '
+              [ .result[] | select(.message.chat.id == $chat and (.message.date > $since)) ]
+              | if length > 0 then sort_by(.message.date)[-1].message.text else empty end')
+            echo "$updates" | jq -r '.result[-1].update_id + 1 // 0' | { read offset; }
+            if [ -n "$newest" ]; then
+              if echo "$newest" | grep -qiE '^(y|yes|approve)\b'; then
+                echo "approved=yes" >> "$GITHUB_OUTPUT"
+                echo "Approved."
+                exit 0
+              elif echo "$newest" | grep -qiE '^(n|no|reject)\b'; then
+                echo "Rejected by user."
+                exit 1
+              fi
+            fi
+          done
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: wait-for-approval
+    if: needs.wait-for-approval.outputs.approved == 'yes'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run checks
+        run: |
+          cd src
+          npm ci
+          npm test
+      - name: Merge PR
+        env:
+          GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
