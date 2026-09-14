@@ -39,10 +39,13 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          PR="${{ github.event.pull_request.number }}"
-          TITLE="${{ github.event.pull_request.title }}"
-          URL="${{ github.event.pull_request.html_url }}"
+          PR="$PR_NUMBER"
+          TITLE="$PR_TITLE"
+          URL="$PR_URL"
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           echo "Bot token length: ${#BOT_TOKEN} (Telegram tokens are 46 chars)"
@@ -131,5 +134,6 @@ jobs:
       - name: Merge PR
         env:
           GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
+          GH_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
+          gh pr merge "$GH_PR_NUMBER" --squash --delete-branch
