@@ -1,0 +1,63 @@
+# CI — quality gates on every push and pull request.
+#
+# Sections:
+# - on: triggers — push (any branch) + pull_request, ignoring docs-only changes
+# - concurrency: one run per branch at a time; a newer run cancels an older one
+# - permissions: contents: read (least privilege)
+# - jobs.check steps in order:
+#   1. actionlint       → lints all workflow YAML files
+#   2. setup-sam        → installs the AWS SAM CLI
+#   3. sam validate     → validates template.yaml
+#   4. setup-node (22)  → same runtime as the Lambda
+#   5. npm ci + npm test→ installs lockfile deps, runs the Vitest unit tests
+#   6. npm audit        → fails if any dependency has a high/critical CVE
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint workflows
+        uses: rhysd/actionlint@v1
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate SAM template
+        run: sam validate --lint --region us-east-1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and test
+        run: |
+          cd src
+          npm ci
+          npm test
+
+      - name: Audit dependencies
+        run: |
+          cd src
+          npm audit --audit-level=high

@@ -1,3 +1,16 @@
+# Deploy to dev — deploys the SAM stack on every push to `dev`.
+#
+# Sections:
+# - on: trigger — push to the dev branch, plus manual workflow_dispatch
+# - concurrency: deploy-dev — one deploy at a time; a newer push cancels a pending one
+# - jobs.deploy (environment: development):
+#   1. checkout                 → pulls the pushed commit
+#   2. configure-aws-cred       → assumes AWS creds into vars.AWS_REGION
+#   3. setup-sam                → installs the AWS SAM CLI
+#   4. sam build                → installs prod deps and packages the Lambda
+#   5. sam deploy               → updates the isp-soa-automation stack, passing
+#                                 every Lambda env value as --parameter-overrides
+
 name: Deploy to dev
 
 on:
@@ -5,6 +18,10 @@ on:
     branches:
       - dev
   workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
 
 jobs:
   deploy:

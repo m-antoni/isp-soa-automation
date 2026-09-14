@@ -1,3 +1,18 @@
+# Approve & merge PR to master — Telegram human gate before anything merges.
+#
+# Triggers:
+# - pull_request opened targeting master (e.g. dev -> master)
+# - manual workflow_dispatch (to test the bot flow without a PR)
+#
+# Sections:
+# - concurrency: per-PR (per dispatch run) — one approval flow at a time
+# - permissions: contents read only (the merge uses GH_BOT_TOKEN, not GITHUB_TOKEN)
+# - jobs.notify:             DMs the PR details to Telegram; outputs notified_at
+# - jobs.wait-for-approval:  polls getUpdates for a reply newer than notified_at;
+#                            YES → approved=yes, NO → fails, other → bot nudges you
+# - jobs.merge (if 'yes'):   checkouts master, runs npm ci + tests, npm audit,
+#                            then gh pr merge --squash --delete-branch
+
 name: Approve & merge PR to master
 
 on:
@@ -5,6 +20,9 @@ on:
     types: [opened]
     branches: [master]
   workflow_dispatch:
+
+concurrency:
+  group: approve-master-${{ github.event.number || github.run_id }}
 
 permissions:
   contents: read
@@ -106,6 +124,10 @@ jobs:
           cd src
           npm ci
           npm test
+      - name: Audit dependencies
+        run: |
+          cd src
+          npm audit --audit-level=high
       - name: Merge PR
         env:
           GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}

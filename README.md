@@ -15,14 +15,18 @@ Built with the AWS Serverless Application Model (SAM):
 ```
 .
 ├── .github/workflows/                    # GitHub Actions
+│   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit)
 │   ├── deploy-dev.yml                    # Deploy stack to dev on push to `dev`
 │   └── master-pr-approval.yml            # Telegram approve-to-merge for PRs to `master`
 ├── docs/                                 # Setup guides
+│   ├── github_actions.md                 # All workflows explained
 │   ├── telegram-approval.md              # Telegram bot + approve-to-merge setup
 │   └── google-oauth-setup.md             # Gmail OAuth2 client + refresh token
 ├── src/                                  # Lambda function source (ESM, Node 22)
 │   ├── index.mjs                         # Handler entry point (index.handler)
 │   ├── gmail.mjs                         # Gmail OAuth2 + OTP retrieval
+│   ├── helpers.mjs                       # Pure helpers (no env/network dependencies)
+│   ├── helpers.test.mjs                  # Vitest unit tests for helpers
 │   ├── local.mjs                         # Local-only runner (loads .env, prints result)
 │   └── package.json                      # Lambda runtime dependencies
 ├── events/event.json                     # Sample payload for local invocation
@@ -188,6 +192,33 @@ sam deploy \
 ```
 
 Keep `samconfig.toml`, `.env`, and secrets out of version control (already handled in `.gitignore`).
+
+## Testing & Quality Gates
+
+### Unit tests (Vitest)
+
+Pure helper functions in `src/helpers.mjs` are covered by Vitest tests (`src/helpers.test.mjs`). They have no environment, network, or AWS dependencies, so they run instantly and offline:
+
+```bash
+cd src
+npm ci
+npm test
+```
+
+SAM strips devDependencies (including Vitest) during `sam build`, so these stay out of the Lambda deployment package.
+
+### CI workflow (`.github/workflows/ci.yml`)
+
+Runs on every push and pull request:
+
+| Step | What it does |
+| ---- | ------------ |
+| `actionlint` | Lints all GitHub Actions workflow YAML files |
+| `sam validate --lint` | Validates `template.yaml` |
+| `npm test` | Runs the Vitest unit test suite |
+| `npm audit --audit-level=high` | Fails on high/critical CVEs |
+
+A concurrency group prevents duplicate runs for the same branch.
 
 ## Local testing
 
