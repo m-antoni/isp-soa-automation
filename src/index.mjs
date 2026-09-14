@@ -57,7 +57,6 @@ for (const [key, value] of Object.entries(config)) {
 }
 
 export const handler = async (event, context) => {
-  // TODO: implement the pipeline. Steps to follow (see notes.md):
   // Step 1: POST {CONVERGE_API_URL}/ with { acct_no, is_tac, is_privacy_notice, is_converge }
   // const getAccount = await getAccountDetails({
   //   acct_no: CONVERGE_ACCOUNT_NO,
@@ -106,7 +105,7 @@ export const handler = async (event, context) => {
           ContentType: "application/pdf",
         })
       );
-      console.log("UPLOADED S3", s3Key);
+      console.log("PDF UPLOADED IN S3", s3Key);
 
       // Step 7: Email the unlocked SOA PDF via Gmail SMTP.
       await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
@@ -117,9 +116,17 @@ export const handler = async (event, context) => {
     }
   }
 
+  const now = new Date();
+
   return {
     statusCode: 200,
-    body: "SUCCESS",
+    body: JSON.stringify({
+      status: "Success",
+      s3_bucket: s3Key,
+      file_name: filename,
+      email_sent_to: config.MAIL_TO.split(","),
+      timestamp: now.toLocaleString(),
+    }),
   };
 };
 
@@ -232,7 +239,9 @@ async function decryptSoaPdf(soaBuffer, password) {
     qpdf.callMain([inPath, "--decrypt", `--password=${password}`, outPath]);
   } catch (error) {
     throw new Error(
-      `qpdf decrypt failed (check PDF_PASSWORD): ${qpdfStderr.join(" ") || error.message}`
+      `qpdf decrypt failed (check PDF_PASSWORD): ${
+        qpdfStderr.join(" ") || error.message
+      }`
     );
   } finally {
     try {
@@ -266,7 +275,9 @@ async function decryptSoaPdf(soaBuffer, password) {
       JSON.stringify(inspectPdfEncryption(soaBuffer))
     );
     throw new Error(
-      `qpdf produced an unusable PDF: ${error.message}. qpdf: ${qpdfStderr.join(" ")}`
+      `qpdf produced an unusable PDF: ${error.message}. qpdf: ${qpdfStderr.join(
+        " "
+      )}`
     );
   }
   return decrypted;
@@ -276,11 +287,12 @@ async function decryptSoaPdf(soaBuffer, password) {
 // File name always uses the 15th as the day (e.g. SOA-2026-01-15.pdf).
 function soaFileNames() {
   const now = new Date();
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   return {
     month: `${yyyy}-${mm}`,
-    fileName: `SOA-${yyyy}-${mm}-15.pdf`,
+    fileName: `SOA-${yyyy}-${mm}-${lastDayOfMonth}.pdf`,
   };
 }
 
@@ -326,15 +338,21 @@ async function sendPdfEmail({ fileName, buffer }) {
     },
   });
 
-  const recipients = [...new Set(
-    config.MAIL_TO.split(",").map((s) => s.trim()).filter(Boolean)
-  )];
+  // separated commas for multiple emails ex. "michael@mail.com,antoni@mail.com"
+  const recipients = [
+    ...new Set(
+      config.MAIL_TO.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    ),
+  ];
 
   try {
+    const now = new Date();
     const info = await mailer.sendMail({
       from: config.MAIL_FROM,
       to: recipients,
-      subject: `Your Converge SOA (${fileName})`,
+      subject: `Converge SOA Month of ${now.getMonth()}. (${fileName})`,
       text: "The latest Converge Statement of Account is attached.",
       attachments: [{ filename: fileName, content: buffer }],
     });
