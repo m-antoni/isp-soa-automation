@@ -111,21 +111,34 @@ export const handler = async (event, context) => {
       await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
       return {
         statusCode: 200,
-        body: JSON.stringify({ status: "SUCCESS", s3Key }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: "Success",
+          message: "ISP SOA Automation Trigger Success.",
+          data: {
+            s3: s3Key,
+            file_name: fileName,
+            email_sent_from: config.MAIL_FROM,
+            email_sent_to: config.MAIL_TO.split(","),
+            timestamp: now.toISOString(),
+          },
+        }),
       };
     }
   }
 
-  const now = new Date();
-
+  // Fallback return if OTP verification fails
   return {
-    statusCode: 200,
+    statusCode: 400,
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
-      status: "Success",
-      s3_bucket: s3Key,
-      file_name: filename,
-      email_sent_to: config.MAIL_TO.split(","),
-      timestamp: now.toLocaleString(),
+      status: "FAILED",
+      message: "Unable to process SOA. OTP send or validation failed.",
+      timestamp: new Date().toISOString(),
     }),
   };
 };
