@@ -26,11 +26,13 @@ async function getGmailAccessToken() {
   return (await response.json()).access_token;
 }
 
-// ** Fetch the latest Converge OTP from Gmail
-// Looks up the most recent Converge OTP email and returns its 6-character code.
+// ** Fetch the most recent Converge OTP candidates from Gmail
+// Gmail lists the newest message first, but multiple OTP emails can coexist in
+// the inbox (e.g. a previous run's code still sitting there), so this returns a
+// deduped array of codes from the newest few messages - newest message first.
 // Strategy:
 //   1. Query Gmail for messages from Converge (with a subject-based fallback).
-//   2. Decode the newest message body (recursively).
+//   2. Decode the newest few message bodies (recursively).
 //   3. Extract the code from the Subject header (most reliable) and/or the body.
 //   The email can take a few seconds to arrive, so it retries a few times.
 export async function fetchOtpFromGmail() {
@@ -62,30 +64,33 @@ export async function fetchOtpFromGmail() {
       const { messages = [] } = await listRes.json();
       if (messages.length === 0) continue;
 
-      // Gmail returns the newest message first, so messages[0] is the latest OTP.
-      const msg = await (
-        await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messages[0].id}?format=full`,
-          { headers }
-        )
-      ).json();
+      const codes = [];
+      for (const { id } of messages.slice(0, 5)) {
+        const msg = await (
+          await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+            { headers }
+          )
+        ).json();
 
-      // The Subject always carries the code
-      // (e.g. "Your Converge Confirmation Code: 3DOJS4").
-      const subject =
-        msg.payload?.headers?.find((h) => h.name === "Subject")?.value ?? "";
-      console.log("GMAIL MSG SUBJECT", subject);
+        // The Subject always carries the code
+        // (e.g. "Your Converge Confirmation Code: 3DOJS4").
+        const subject =
+          msg.payload?.headers?.find((h) => h.name === "Subject")?.value ?? "";
+        console.log("GMAIL MSG SUBJECT", subject);
 
-      const body = decodeMessageBody(msg.payload);
-      const code =
-        /Confirmation Code:?\s*([A-Z0-9]{6})/i.exec(subject)?.[1] ??
-        /Your Confirmation Code:\s*([A-Z0-9]{6})/.exec(body)?.[1] ??
-        body.match(/\b[A-Z0-9]{6}\b/)?.[0];
-
-      if (code) {
-        console.log("OTP", code);
-        return code;
+        const body = decodeMessageBody(msg.payload);
+        const candidates = [
+          /Confirmation Code:?\s*([A-Z0-9]{6})/i.exec(subject)?.[1],
+          /Your Confirmation Code:\s*([A-Z0-9]{6})/.exec(body)?.[1],
+          body.match(/\b[A-Z0-9]{6}\b/)?.[0],
+        ];
+        for (const candidate of candidates) {
+          if (candidate) codes.push(candidate);
+        }
       }
+
+      if (codes.length > 0) return [...new Set(codes)];
     }
 
     // OTP emails usually land within a few seconds - wait before retrying.

@@ -73,71 +73,67 @@ export const handler = async (event, context) => {
   });
   console.log("SEND OTP", JSON.stringify(sendOTP));
 
-  // ** Step 3: POST {CONVERGE_API_URL}/soa/validate/ with { acct_no, token: <otp> } -> session token + items
-  if (sendOTP.success && sendOTP.data) {
-    // OTP received from GMAIL
-    const otp = await fetchOtpFromGmail();
-    console.log("OTP FROM GMAIL", otp);
+  if (!sendOTP?.success || !sendOTP?.data) {
+    throw new Error(
+      `OTP send failed. Response: ${JSON.stringify(sendOTP ?? "no response")}`
+    );
+  }
 
-    const verifyOTP = await validateOTP({
+  // ** Step 3: POST {CONVERGE_API_URL}/soa/validate/ with { acct_no, token: <otp> } -> session token + items
+  // OTP candidates from GMAIL, newest message first. Multiple OTP emails can
+  // coexist in the inbox (e.g. from a previous run), so try them until one
+  // validates rather than relying on a single code.
+  const otpCandidates = await fetchOtpFromGmail();
+  console.log("OTP CANDIDATES FROM GMAIL", otpCandidates);
+
+  let verifyOTP = null;
+  for (const otp of otpCandidates) {
+    verifyOTP = await validateOTP({
       acct_no: config.CONVERGE_ACCOUNT_NO,
       token: otp,
     });
-    console.log("Verify OTP", JSON.stringify(verifyOTP));
-
-    // ** Step 4: GET {CONVERGE_API_URL}/soa/{acct_no}/{token}/{items[0].slug}/ to download the latest PDF
-    if (verifyOTP && verifyOTP.success) {
-      const soaBuffer = await downloadPdf(verifyOTP);
-      console.log("SOA PDF BYTES", soaBuffer.length);
-
-      // Step 5: Unlock the encrypted PDF with the account password via qpdf.
-      const unlockedBytes = await decryptSoaPdf(soaBuffer, config.PDF_PASSWORD);
-      console.log("UNLOCKED PDF BYTES", unlockedBytes.length);
-
-      // Step 6: Upload the unlocked PDF to the SOA bucket.
-      const { month, fileName } = soaFileNames();
-      const s3Key = `soa/${config.CONVERGE_ACCOUNT_NO}/${month}/${fileName}`;
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: config.SOA_BUCKET_NAME,
-          Key: s3Key,
-          Body: new Uint8Array(unlockedBytes),
-          ContentType: "application/pdf",
-        })
-      );
-      console.log("PDF UPLOADED IN S3", s3Key);
-
-      // Step 7: Email the unlocked SOA PDF via Gmail SMTP.
-      await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
-      return {
-        statusCode: 200,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: "Success",
-          message: "ISP SOA Automation Trigger Success.",
-          data: {
-            s3: s3Key,
-            file_name: fileName,
-            email_sent_from: config.MAIL_FROM,
-            email_sent_to: config.MAIL_TO.split(","),
-            timestamp: new Date().toISOString(),
-          },
-        }),
-      };
-    }
+    console.log("VERIFY OTP", otp, JSON.stringify(verifyOTP));
+    if (verifyOTP?.success) break;
   }
 
-  // Fallback return if OTP verification fails
+  if (!verifyOTP?.success) {
+    throw new Error(
+      `OTP validation failed for all candidates: ${JSON.stringify(otpCandidates)}`
+    );
+  }
+
+  // ** Step 4: GET {CONVERGE_API_URL}/soa/{acct_no}/{token}/{items[0].slug}/ to download the latest PDF
+  const soaBuffer = await downloadPdf(verifyOTP);
+  console.log("SOA PDF BYTES", soaBuffer.length);
+
+  // Step 5: Unlock the encrypted PDF with the account password via qpdf.
+  const unlockedBytes = await decryptSoaPdf(soaBuffer, config.PDF_PASSWORD);
+  console.log("UNLOCKED PDF BYTES", unlockedBytes.length);
+
+  // Step 6: Upload the unlocked PDF to the SOA bucket.
+  const { month, fileName } = soaFileNames();
+  const s3Key = `soa/${config.CONVERGE_ACCOUNT_NO}/${month}/${fileName}`;
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: config.SOA_BUCKET_NAME,
+      Key: s3Key,
+      Body: new Uint8Array(unlockedBytes),
+      ContentType: "application/pdf",
+    })
+  );
+  console.log("PDF UPLOADED IN S3", s3Key);
+
+  // Step 7: Email the unlocked SOA PDF via Gmail SMTP.
+  await sendPdfEmail({ fileName, buffer: Buffer.from(unlockedBytes) });
   return {
-    statusCode: 400,
-    headers: {
-      "Content-Type": "application/json",
-    },
+    statusCode: 200,
     body: JSON.stringify({
-      status: "FAILED",
-      message: "Unable to process SOA. OTP send or validation failed.",
+      status: "Success",
+      message: "ISP SOA Automation Trigger Success.",
+      s3: s3Key,
+      file_name: fileName,
+      email_sent_from: config.MAIL_FROM,
+      email_sent_to: config.MAIL_TO.split(","),
       timestamp: new Date().toISOString(),
     }),
   };
@@ -145,65 +141,53 @@ export const handler = async (event, context) => {
 
 // ** Enter Account Details
 async function getAccountDetails(payload = {}) {
-  try {
-    const response = await fetch(`${config.CONVERGE_API_URL}/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${config.CONVERGE_API_URL}/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Something went wrong!: ", error);
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+
+  return await response.json();
 }
 
 // ** Sent OTP to email
 async function sendOtpViaEmail(payload = {}) {
-  try {
-    const response = await fetch(`${config.CONVERGE_API_URL}/soa/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${config.CONVERGE_API_URL}/soa/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Something went wrong!: ", error);
+  if (!response.ok) {
+    throw new Error(`OTP send HTTP error! Status: ${response.status}`);
   }
+
+  return await response.json();
 }
 
 // ** Validate the OTP
 async function validateOTP(payload = {}) {
-  try {
-    const response = await fetch(`${config.CONVERGE_API_URL}/soa/validate/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${config.CONVERGE_API_URL}/soa/validate/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Something went wrong!: ", error);
+  if (!response.ok) {
+    throw new Error(`OTP validation HTTP error! Status: ${response.status}`);
   }
+
+  return await response.json();
 }
 
 // ** Download the latest SOA PDF
