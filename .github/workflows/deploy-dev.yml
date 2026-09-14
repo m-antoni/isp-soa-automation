@@ -1,4 +1,4 @@
-# Deploy to dev — deploys the SAM stack on every push to `dev`.
+# deploy-dev — deploys the SAM stack on every push to `dev`.
 #
 # Sections:
 # - on: trigger — push to the dev branch, plus manual workflow_dispatch
@@ -11,7 +11,7 @@
 #   5. sam deploy               → updates the isp-soa-automation stack, passing
 #                                 every Lambda env value as --parameter-overrides
 
-name: Deploy to dev
+name: deploy-dev
 
 on:
   push:

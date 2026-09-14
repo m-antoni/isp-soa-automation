@@ -1,4 +1,4 @@
-# Approve & merge PR to master — Telegram human gate before anything merges.
+# approve-merge-to-master — Telegram human gate before anything merges.
 #
 # Triggers:
 # - pull_request opened targeting master (e.g. dev -> master)
@@ -13,7 +13,7 @@
 # - jobs.merge (if 'yes'):   checkouts master, runs npm ci + tests, npm audit,
 #                            then gh pr merge --squash --delete-branch
 
-name: Approve & merge PR to master
+name: approve-merge-to-master
 
 on:
   pull_request:

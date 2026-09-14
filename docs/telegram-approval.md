@@ -5,7 +5,7 @@ your phone using Telegram** — for free. When someone opens a PR targeting
 `master`, a Telegram bot sends you a message. Reply `yes` and the code runs
 checks and merges the PR automatically. Reply `no` and it rejects it.
 
-The workflow file is `.github/workflows/master-pr-approval.yml`.
+The workflow file is `.github/workflows/approve-merge-to-master.yml`.
 
 ---
 
@@ -146,7 +146,7 @@ button for you (the normal workflow token is not allowed to merge to `master`).
 
 ### Part D — Deploy the workflow (1 min)
 
-1. Make sure `.github/workflows/master-pr-approval.yml` exists in your repo
+1. Make sure `.github/workflows/approve-merge-to-master.yml` exists in your repo
    (it was created for you).
 2. Commit and push it to `master`.
 

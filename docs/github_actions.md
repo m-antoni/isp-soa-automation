@@ -7,10 +7,10 @@ This repository uses three GitHub Actions workflows. This page explains what eac
 | Workflow | File | Purpose |
 | -------- | ---- | ------- |
 | CI | `.github/workflows/ci.yml` | Quality gates on every push/PR |
-| Deploy to dev | `.github/workflows/deploy-dev.yml` | Deploy the stack to the dev environment on pushes to `dev` |
-| Approve & merge PR to master | `.github/workflows/master-pr-approval.yml` | Telegram bot asks you to approve a PR to `master`, then runs checks and auto-merges |
+| deploy-dev | `.github/workflows/deploy-dev.yml` | Deploy the stack to the dev environment on pushes to `dev` |
+| approve-merge-to-master | `.github/workflows/approve-merge-to-master.yml` | Telegram bot asks you to approve a PR to `master`, then runs checks and auto-merges |
 
-Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev` job uses the `development` environment; the `master-pr-approval` jobs use the `production` environment. A job must declare `environment: <name>` for `secrets.*` and `vars.*` to resolve — without it, they come back empty.
+Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev` job uses the `development` environment; the `approve-merge-to-master` jobs use the `production` environment. A job must declare `environment: <name>` for `secrets.*` and `vars.*` to resolve — without it, they come back empty.
 
 ---
 
@@ -36,7 +36,7 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 
 ---
 
-## 2. Deploy to dev (`.github/workflows/deploy-dev.yml`)
+## 2. deploy-dev (`.github/workflows/deploy-dev.yml`)
 
 **Triggers:** every push to the `dev` branch, plus manual `workflow_dispatch` from the Actions tab.
 
@@ -61,7 +61,7 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 
 ---
 
-## 3. Approve & merge PR to master (`.github/workflows/master-pr-approval.yml`)
+## 3. approve-merge-to-master (`.github/workflows/approve-merge-to-master.yml`)
 
 **Triggers:**
 
@@ -114,9 +114,9 @@ Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `o
 ## How they fit together
 
 ```
- push to dev ──────────► CI ──► Deploy to dev
+ push to dev ──────────► CI ──► deploy-dev
  push to a branch ─────► CI
- PR dev → master ──────► CI ──► Approve & merge (Telegram yes/no)
+ PR dev → master ──────► CI ──► approve-merge-to-master
 ```
 
 CI runs on everything and is the fast feedback loop; the Telegram workflow is the human gate before anything lands on `master`.

@@ -17,7 +17,7 @@ Built with the AWS Serverless Application Model (SAM):
 ├── .github/workflows/                    # GitHub Actions
 │   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit)
 │   ├── deploy-dev.yml                    # Deploy stack to dev on push to `dev`
-│   └── master-pr-approval.yml            # Telegram approve-to-merge for PRs to `master`
+│   └── approve-merge-to-master.yml        # Telegram approve-to-merge for PRs to `master`
 ├── docs/                                 # Setup guides
 │   ├── github_actions.md                 # All workflows explained
 │   ├── telegram-approval.md              # Telegram bot + approve-to-merge setup
@@ -278,7 +278,7 @@ sam local invoke SoaAutomationFunction -e events/event.json \
 
 ## Telegram Approve-to-Merge Workflow (PRs to `master`)
 
-`.github/workflows/master-pr-approval.yml` lets you approve PRs to `master` from
+`.github/workflows/approve-merge-to-master.yml` lets you approve PRs to `master` from
 your phone: the workflow DMs you on Telegram, you reply `yes`/`no`, and it runs
 checks then auto-merges (or rejects).
 
