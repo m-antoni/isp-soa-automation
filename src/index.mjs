@@ -292,7 +292,7 @@ function soaFileNames() {
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   return {
     month: `${yyyy}-${mm}`,
-    fileName: `SOA-${yyyy}-${mm}-${lastDayOfMonth}.pdf`,
+    fileName: `SOA-${yyyy}-${mm}-${lastDayOfMonth.getDate()}.pdf`,
   };
 }
 
@@ -349,10 +349,11 @@ async function sendPdfEmail({ fileName, buffer }) {
 
   try {
     const now = new Date();
+    const monthName = now.toLocaleString("default", { month: "long" });
     const info = await mailer.sendMail({
       from: config.MAIL_FROM,
       to: recipients,
-      subject: `Converge SOA Month of ${now.getMonth()}. (${fileName})`,
+      subject: `Converge SOA Month of ${monthName}. (${fileName})`,
       text: "The latest Converge Statement of Account is attached.",
       attachments: [{ filename: fileName, content: buffer }],
     });
