@@ -137,3 +137,34 @@ jobs:
           GH_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           gh pr merge "$GH_PR_NUMBER" --squash --delete-branch
+
+  notify-success:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: merge
+    if: needs.merge.result == 'success'
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO_NAME: ${{ github.repository }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
+          CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
+          MSG="🌐 master merge succeeded
+          Branch: master
+          Repository: ${REPO_NAME}
+          Repo link: ${REPO_URL}
+          Pipeline run: ${RUN_URL}"
+          RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "parse_mode=HTML")
+          echo "Telegram response: $RESP"
+          if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
+            echo "::error::Telegram sendMessage failed: $RESP"
+            exit 1
+          fi
