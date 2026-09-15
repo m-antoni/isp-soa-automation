@@ -67,14 +67,16 @@ jobs:
           fi
           TITLE="$(gh pr view "$PR" -R "$REPO" --json title --jq .title)"
           URL="$(gh pr view "$PR" -R "$REPO" --json url --jq .url)"
+          AUTHOR="$(gh pr view "$PR" -R "$REPO" --json author --jq .author.login)"
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           echo "Bot token length: ${#BOT_TOKEN} (Telegram tokens are 46 chars)"
           echo "Bot token starts with: ${BOT_TOKEN:0:6}... ends with: ${BOT_TOKEN: -4}"
           echo "Chat ID: $CHAT_ID"
-          MSG="New PR #${PR} '${TITLE}' wants to merge into master.
-          ${URL}
-          Reply YES to run checks and merge, or NO to reject."
+          MSG="Subject: New PR #${PR} '${TITLE}' wants to merge into master.
+          Author: ${AUTHOR} 
+          PR Link: ${URL}
+          Action: Reply YES to run checks and merge, or NO to reject."
           RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "text=${MSG}")
