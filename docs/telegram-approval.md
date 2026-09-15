@@ -117,8 +117,8 @@ button for you (the normal workflow token is not allowed to merge to `master`).
 
    > **Both permissions are required.** Without `Pull requests: Read and write`
    > the merge is denied; without `Contents: Read and write` the merge fails with
-   > `GraphQL: Resource not accessible by personal access token` (the merge
-   > and branch delete also need repo write access). If you already created the
+   > `GraphQL: Resource not accessible by personal access token` (merging needs
+   > repo write access). If you already created the
    > token, click **Edit** on it and add whichever is missing — the token value
    > stays the same, so you only need to re-copy it into the secret if you
    > regenerated it.
@@ -148,7 +148,9 @@ button for you (the normal workflow token is not allowed to merge to `master`).
 
 1. Make sure `.github/workflows/approve-merge-to-master.yml` exists in your repo
    (it was created for you).
-2. Commit and push it to `master`.
+2. Commit and push it to `dev`. The workflows are **self-activating**: a same-repo
+   reusable (`uses: ./.github/workflows/ci.yml`) resolves at the caller's commit,
+   so a plain push to `dev` is enough — no need to merge anything to `master` first.
 
 ---
 
