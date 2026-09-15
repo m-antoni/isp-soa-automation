@@ -6,14 +6,14 @@
 # branch), so no activation dance is needed and there is no workflow_run.
 #
 # Runs 7 gates in one `check` job:
-#   1. validate config  → every secrets.* / vars.* used has a matching entry in
-#                         .github/secrets-manifest.txt / vars-manifest.txt
-#   2. actionlint       → lints all workflow YAML files
-#   3. gitleaks         → scans full git history for leaked secrets
+#   1. validate config      → every secrets.* / vars.* used has a matching entry in
+#                             .github/secrets-manifest.txt / vars-manifest.txt
+#   2. actionlint           → lints all workflow YAML files
+#   3. gitleaks             → scans full git history for leaked secrets
 #   4. spelling (codespell) → spell-checks all source/docs files
-#   5. sam validate     → validates template.yaml
-#   6. npm ci + npm test → installs lockfile deps, runs the Vitest unit tests
-#   7. npm audit        → fails if any dependency has a high/critical CVE
+#   5. sam validate         → validates template.yaml
+#   6. npm ci + npm test    → installs lockfile deps, runs the Vitest unit tests
+#   7. npm audit            → fails if any dependency has a high/critical CVE
 
 name: CI
 
