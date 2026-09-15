@@ -65,7 +65,7 @@ jobs:
             echo "::error::Could not resolve the pull request number from the event payload or gh pr list"
             exit 1
           fi
-          TITLE="$(gh pr view "$PR" -R "$REPO" --json title --jq .title)"
+          TITLE="$(gh pr view "$PR" -R "$REPO" --json title --jq .title | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
           URL="$(gh pr view "$PR" -R "$REPO" --json url --jq .url)"
           AUTHOR="$(gh pr view "$PR" -R "$REPO" --json author --jq .author.login)"
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
@@ -79,7 +79,9 @@ jobs:
           Action: Reply <b>YES</b> to run checks and merge, or <b>NO</b> to reject."
           RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
-            --data-urlencode "text=${MSG}")
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true")
           echo "Telegram response: $RESP"
           if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
             echo "::error::Telegram sendMessage failed: $RESP"
