@@ -1,10 +1,13 @@
-# CI — quality gates on pull requests to master and on master pushes. A
-# successful run of a pull request to master chains approve-merge-to-master
-# (via workflow_run) so the Telegram gate only opens after CI passes.
+# CI — quality gates on pull requests to master. A successful run of a pull
+# request to master chains approve-merge-to-master (via workflow_run) so the
+# Telegram gate only opens after CI passes.
+#
+# Note: there is intentionally NO `push: [master]` trigger — master only
+# changes via the approve-merge flow (which re-runs checks before merging), and
+# a master-push CI would just spawn a skipped approve-merge run in the list.
 #
 # Sections:
-# - on: triggers — pull requests targeting master + pushes to master + manual
-#       workflow_dispatch
+# - on: triggers — pull requests targeting master + manual workflow_dispatch
 # - concurrency: one run per branch at a time; a newer run cancels an older one
 # - permissions: contents: read (least privilege)
 # - jobs.check steps in order:
@@ -21,9 +24,6 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - master
-  push:
     branches:
       - master
   workflow_dispatch:
