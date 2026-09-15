@@ -132,3 +132,17 @@ Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `o
 ```
 
 CI runs on everything and is the fast feedback loop; the Telegram workflow is the human gate before anything lands on `master`.
+
+> **`workflow_run` activation:** `workflow_run` triggers are only read from the
+> **default branch** (`master`), so these flows only work once the workflow files
+> are on `master`.
+>
+> **After an approved merge:** the merge uses `--delete-branch`, which deletes the
+> remote `dev` branch. Recreate it from `master`:
+>
+> ```bash
+> git fetch origin
+> git checkout master && git pull --ff-only
+> git branch -D dev && git checkout -b dev
+> git push origin dev
+> ```

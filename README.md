@@ -16,7 +16,7 @@ Built with the AWS Serverless Application Model (SAM):
 .
 ├── .github/workflows/                    # GitHub Actions
 │   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit, spell, leaks)
-│   ├── deploy-dev.yml                    # Deploy to dev on push to `dev` (waits for CI, notifies on Telegram)
+│   ├── deploy-dev.yml                    # Deploy to dev after CI on push to `dev` (notifies on Telegram)
 │   └── approve-merge-to-master.yml       # Telegram approve-to-merge for PRs to `master`
 ├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
 ├── .github/vars-manifest.txt             # Allowlisted vars.NAMEs used in workflows
@@ -120,8 +120,8 @@ Setup:
 4. `MAIL_FROM` secret and `MAIL_TO` var/param control sender and recipient.
 
 Scheduled EventBridge rules trigger the whole pipeline automatically; the
-GitHub Actions workflow deploys (and it waits for CI to pass first, then
-notifies on Telegram on success):
+GitHub Actions CI runs on every push first, and a successful CI run for a push
+to `dev` then deploys and notifies on Telegram on success:
 
 - `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
 - `isp-soa-automation-email` — **removed** (was a daily-midnight test rule).
@@ -283,8 +283,19 @@ sam local invoke SoaAutomationFunction -e events/event.json \
 ## Telegram Approve-to-Merge Workflow (PRs to `master`)
 
 `.github/workflows/approve-merge-to-master.yml` lets you approve PRs to `master` from
-your phone: the workflow DMs you on Telegram, you reply `yes`/`no`, and it runs
-checks then auto-merges with a rebase (or rejects).
+your phone: the workflow runs after a **successful CI run** on a `dev → master` PR,
+DMs you on Telegram, you reply `yes`/`no`, and it runs checks then auto-merges with
+a rebase (or rejects).
+
+> **Note:** the merge deletes the `dev` branch (`--delete-branch`). After each
+> approved merge, recreate it from `master`:
+>
+> ```bash
+> git fetch origin
+> git checkout master && git pull --ff-only
+> git branch -D dev && git checkout -b dev
+> git push origin dev
+> ```
 
 Full setup guide including how to get the Telegram token, the GitHub token, and
 the 3 secrets: **[docs/telegram-approval.md](docs/telegram-approval.md)**
