@@ -58,7 +58,7 @@ The checks run even when a push only changes `.md` docs, so gitleaks still scans
 4. **Set up SAM CLI** — installs `sam`.
 5. **Build Lambda** — `sam build` installs production dependencies from `src/package.json` and packages the function.
 6. **Deploy stack** — `sam deploy` creates/updates the `isp-soa-automation` CloudFormation stack, passing every Lambda environment value as `--parameter-overrides`.
-7. **`notify` job** (`needs: deploy`, `if: needs.deploy.result == 'success'`) — Telegram success message (branch, author, repo link, pipeline link) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
+7. **`notify` job** (`needs: deploy`, `if: needs.deploy.result == 'success'`) — Telegram success message (environment, author, branch, GitHub Action list, repository + pipeline links, Manila timestamp) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 
 **Values used:**
 
