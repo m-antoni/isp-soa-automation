@@ -3,12 +3,14 @@
 # Sections:
 # - on: trigger — push to the dev branch, plus manual workflow_dispatch
 # - concurrency: deploy-dev — one deploy at a time; a newer push cancels a pending one
+# - permissions: actions: read — so the guard can watch the CI workflow run
 # - jobs.deploy (environment: development):
 #   1. checkout                 → pulls the pushed commit
-#   2. configure-aws-cred       → assumes AWS creds into vars.AWS_REGION
-#   3. setup-sam                → installs the AWS SAM CLI
-#   4. sam build                → installs prod deps and packages the Lambda
-#   5. sam deploy               → updates the isp-soa-automation stack, passing
+#   2. wait-for-ci              → blocks until the CI workflow on this commit passes
+#   3. configure-aws-cred       → assumes AWS creds into vars.AWS_REGION
+#   4. setup-sam                → installs the AWS SAM CLI
+#   5. sam build                → installs prod deps and packages the Lambda
+#   6. sam deploy               → updates the isp-soa-automation stack, passing
 #                                 every Lambda env value as --parameter-overrides
 
 name: deploy-dev
@@ -18,6 +20,9 @@ on:
     branches:
       - dev
   workflow_dispatch:
+
+permissions:
+  actions: read
 
 concurrency:
   group: deploy-dev
@@ -30,6 +35,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Wait for CI to pass
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          for i in $(seq 1 90); do
+            run=$(gh run list --workflow CI --commit "$HEAD_SHA" --limit 1 --json status,conclusion --jq '.[0]')
+            status=$(echo "$run" | jq -r '.status')
+            conclusion=$(echo "$run" | jq -r '.conclusion')
+            echo "CI run status: ${status}, conclusion: ${conclusion}"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI passed — proceeding to deploy."
+                exit 0
+              fi
+              echo "::error::CI failed with conclusion: ${conclusion}. Not deploying."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::Timed out waiting for CI to finish."
+          exit 1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
