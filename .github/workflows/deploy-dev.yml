@@ -113,7 +113,7 @@ jobs:
           RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
-            --data-urlencode "parse_mode=HTML")
+            --data-urlencode "parse_mode=HTML" \
             --data-urlencode "disable_web_page_preview=true")
           echo "Telegram response: $RESP"
           if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
