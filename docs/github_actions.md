@@ -42,20 +42,21 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 
 ## 2. deploy-dev (`.github/workflows/deploy-dev.yml`)
 
-**Triggers:** every push to the `dev` branch, plus manual `workflow_dispatch` from the Actions tab.
+**Triggers:**
+- `workflow_run` — fires when the `CI` workflow completes. The deploy job only runs for **successful** CI runs from a **push** to `dev`. CI runs triggered by PRs (to master) do not trigger this.
+- manual `workflow_dispatch` from the Actions tab (bypasses the CI gate).
 
 **Environment:** `development` (all env-scoped secrets/vars come from there).
 
 **What it does:**
 
-1. **Checkout** — pulls the pushed commit.
-2. **Wait for CI to pass** — on pushes only (not `workflow_dispatch`), polls the `CI` workflow run for the same commit until it completes; if CI fails, the deploy aborts. Uses `gh run list` with `GITHUB_TOKEN` (workflow permission `actions: read`). Timeout after 90 attempts (15 min).
-3. **Configure AWS credentials** — `configure-aws-credentials` using `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets into region `vars.AWS_REGION`.
-4. **Set up SAM CLI** — installs `sam`.
-5. **Build Lambda** — `sam build` installs production dependencies from `src/package.json` and packages the function.
-6. **Deploy stack** — `sam deploy` creates/updates the `isp-soa-automation` CloudFormation stack, passing every Lambda environment value as `--parameter-overrides`.
+1. **Checkout** — pulls the code (needs `contents: read`).
+2. **Configure AWS credentials** — `configure-aws-credentials` using `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets into region `vars.AWS_REGION`.
+3. **Set up SAM CLI** — installs `sam`.
+4. **Build Lambda** — `sam build` installs production dependencies from `src/package.json` and packages the function.
+5. **Deploy stack** — `sam deploy` creates/updates the `isp-soa-automation` CloudFormation stack, passing every Lambda environment value as `--parameter-overrides`.
 
-There is also a **`notify` job** (`needs: deploy`, `if: success()`) that sends a Telegram success message (branch, author, repo link, pipeline link) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
+There is also a **`notify` job** (`needs: deploy`, `if: needs.deploy.result == 'success'`) that sends a Telegram success message (branch, author, repo link, pipeline link) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 
 **Values used:**
 
@@ -64,7 +65,7 @@ There is also a **`notify` job** (`needs: deploy`, `if: success()`) that sends a
 | Secrets | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `USER_EMAIL`, `USER_MOBILE`, `PDF_PASSWORD`, `CONVERGE_ACCOUNT_NO`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `MAIL_FROM`, `GMAIL_SMTP_APP_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Vars | `AWS_REGION`, `CONVERGE_API_URL`, `SOA_BUCKET_NAME`, `MAIL_TO`, `SAM_PACKAGING_BUCKET` |
 
-**Permissions:** `actions: read` (so the CI-wait step can poll `gh run list`).
+**Permissions:** `actions: read` + `contents: read` (needed for `gh run list` in the `if` gate and for `actions/checkout`).
 
 **Concurrency:** `deploy-dev` with `cancel-in-progress: true` — only one deploy runs at a time; a newer push to `dev` supersedes a still-running deploy.
 
@@ -74,10 +75,10 @@ There is also a **`notify` job** (`needs: deploy`, `if: success()`) that sends a
 
 **Triggers:**
 
-- a `pull_request` **opened** targeting `master` (only on open, not on later commits), e.g. `dev → master`
+- `workflow_run` — fires when the `CI` workflow completes. The flow only runs for **successful** CI runs of a **pull request** (head branch `dev`) to master. So the order is `CI → approve-merge-to-master`.
 - manual `workflow_dispatch` (useful for testing the bot flow without opening a PR)
 
-**Environment:** `production` (all three jobs declare it so `TELEGRAM_*` / `GH_BOT_TOKEN` secrets resolve).
+**Environment:** `production` (all jobs declare it so `TELEGRAM_*` / `GH_BOT_TOKEN` secrets resolve).
 
 **How it works — three chained jobs:**
 
@@ -91,7 +92,7 @@ Telegram                     │                    audits, then
 ```
 
 **Job 1 — `notify`:**
-Sends a Telegram message with the PR number, title and URL: "Reply YES to run checks and merge, or NO to reject." Validates the bot token (logs length/prefix/suffix for diagnostics) and fails if `sendMessage` does not return `ok: true`. Outputs `notified_at` (unix timestamp of the sent message).
+Sends a Telegram message with the PR number, title and URL: "Reply YES to run checks and merge, or NO to reject." The PR details are fetched with `gh pr view` (PR number comes from the triggering CI run's `pull_requests`). Validates the bot token (logs length/prefix/suffix for diagnostics) and fails if `sendMessage` does not return `ok: true`. Outputs `notified_at` (unix timestamp of the sent message).
 
 **Job 2 — `wait-for-approval`:**
 Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `offset` cursor, filtering for a message in your chat that arrived **after** `notified_at` (so a "yes" left over from a previous run can't accidentally approve). `timeout-minutes: 30` caps the wait.
@@ -116,7 +117,7 @@ Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `o
 | `TELEGRAM_CHAT_ID` | Your Telegram chat ID (where the DMs arrive) |
 | `GH_BOT_TOKEN` | GitHub personal access token used to merge (needs `Pull requests: Read and write` **and** `Contents: Read and write`) |
 
-**Concurrency:** `approve-master-${{ github.event.number || github.run_id }}` — one approval flow per PR (or per manual dispatch) at a time.
+**Concurrency:** `approve-master-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}` — one approval flow per PR (or per manual dispatch) at a time.
 
 > Setup for the bot, token and secrets: see [telegram-approval.md](telegram-approval.md).
 
