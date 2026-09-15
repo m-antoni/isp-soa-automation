@@ -8,6 +8,10 @@ Built with the AWS Serverless Application Model (SAM):
 - **S3 bucket** — private, SSE-S3 encrypted, versioned, 30-day expiration for staging SOA PDFs
 - Deployable via SAM CLI or GitHub Actions
 
+Fully automated with a **CI/CD pipeline** (GitHub Actions): every push to `dev`
+runs 7 quality gates and auto-deploys, and PRs to `master` are Telegram-approved
+before merging.
+
 ## Tech Stack
 
 | Technology | Role |
