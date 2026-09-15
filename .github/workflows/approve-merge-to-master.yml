@@ -76,7 +76,7 @@ jobs:
           MSG="Subject: New PR #${PR} '${TITLE}' wants to merge into master.
           Author: ${AUTHOR} 
           PR Link: ${URL}
-          Action: Reply YES to run checks and merge, or NO to reject."
+          Action: Reply <b>YES</b> to run checks and merge, or <b>NO</b> to reject."
           RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "text=${MSG}")
@@ -180,13 +180,16 @@ jobs:
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           TS="$(TZ='Asia/Manila' date +'%m/%d/%Y %I:%M%p')"
-          MSG="Environment: Production ✅
-          Github Action: CI, approve-merge-to-master
+          MSG="Environment: <b>Production</b> ✅
           Author: ${AUTHOR}
           Branch: master
+          Github Action: 
+            - CI
+            - approve-merge-to-master
           Repository: ${REPO_NAME}
           Repo link: ${REPO_URL}
           Pipeline run: ${RUN_URL}
+
           ⏱️ ${TS}"
           RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
