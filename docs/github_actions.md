@@ -49,17 +49,22 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 **What it does:**
 
 1. **Checkout** — pulls the pushed commit.
-2. **Configure AWS credentials** — `configure-aws-credentials` using `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets into region `vars.AWS_REGION`.
-3. **Set up SAM CLI** — installs `sam`.
-4. **Build Lambda** — `sam build` installs production dependencies from `src/package.json` and packages the function.
-5. **Deploy stack** — `sam deploy` creates/updates the `isp-soa-automation` CloudFormation stack, passing every Lambda environment value as `--parameter-overrides`.
+2. **Wait for CI to pass** — on pushes only (not `workflow_dispatch`), polls the `CI` workflow run for the same commit until it completes; if CI fails, the deploy aborts. Uses `gh run list` with `GITHUB_TOKEN` (workflow permission `actions: read`). Timeout after 90 attempts (15 min).
+3. **Configure AWS credentials** — `configure-aws-credentials` using `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets into region `vars.AWS_REGION`.
+4. **Set up SAM CLI** — installs `sam`.
+5. **Build Lambda** — `sam build` installs production dependencies from `src/package.json` and packages the function.
+6. **Deploy stack** — `sam deploy` creates/updates the `isp-soa-automation` CloudFormation stack, passing every Lambda environment value as `--parameter-overrides`.
+
+There is also a **`notify` job** (`needs: deploy`, `if: success()`) that sends a Telegram success message (branch, author, repo link, pipeline link) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 
 **Values used:**
 
 | Type | Names |
 | ---- | ----- |
-| Secrets | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `USER_EMAIL`, `USER_MOBILE`, `PDF_PASSWORD`, `CONVERGE_ACCOUNT_NO`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `MAIL_FROM`, `GMAIL_SMTP_APP_PASSWORD` |
+| Secrets | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `USER_EMAIL`, `USER_MOBILE`, `PDF_PASSWORD`, `CONVERGE_ACCOUNT_NO`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `MAIL_FROM`, `GMAIL_SMTP_APP_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Vars | `AWS_REGION`, `CONVERGE_API_URL`, `SOA_BUCKET_NAME`, `MAIL_TO`, `SAM_PACKAGING_BUCKET` |
+
+**Permissions:** `actions: read` (so the CI-wait step can poll `gh run list`).
 
 **Concurrency:** `deploy-dev` with `cancel-in-progress: true` — only one deploy runs at a time; a newer push to `dev` supersedes a still-running deploy.
 
@@ -99,7 +104,9 @@ Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `o
 1. Checks out `master`, sets up Node 22.
 2. **Run checks** — `npm ci` + `npm test` (Vitest suite).
 3. **Audit dependencies** — `npm audit --audit-level=high`.
-4. **Merge PR** — `gh pr merge <number> --squash --delete-branch` using `GH_BOT_TOKEN`.
+4. **Merge PR** — `gh pr merge <number> --rebase --delete-branch` using `GH_BOT_TOKEN`.
+
+**Job 4 — `notify-success`** (`needs: merge`, runs only if the merge job actually succeeded): sends a Telegram success message (branch `master`, author, repo link, pipeline link) using `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 
 **Values used (secrets, in `production` environment):**
 
