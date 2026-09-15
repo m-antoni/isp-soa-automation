@@ -314,3 +314,12 @@ the 3 secrets: **[docs/telegram-approval.md](docs/telegram-approval.md)**
 ```bash
 sam delete --stack-name isp-soa-automation
 ```
+
+---
+
+### Author
+
+**Michael B. Antoni**
+
+- **Email:** michaelantoni.tech@gmail.com
+- **LinkedIn:** [https://linkedin.com/in/m-antoni](https://linkedin.com/in/m-antoni)
