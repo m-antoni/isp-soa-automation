@@ -1,0 +1,67 @@
+# notify-telegram — sends a success summary to Telegram.
+#
+# Triggers:
+# - workflow_run: fires when deploy-dev completes (any conclusion;
+#                 the job filters on success only)
+# - push to master: fires on every push / merge to master
+#
+# The message includes:
+#   - which pipeline succeeded (deploy-dev or master merge)
+#   - branch name
+#   - repository link
+#   - link to the Actions run
+
+name: notify-telegram
+
+on:
+  workflow_run:
+    workflows: [deploy-dev]
+    types: [completed]
+  push:
+    branches: [master]
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    # For workflow_run, only proceed when the triggering run succeeded.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
+          CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
+
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          REPO_NAME="${{ github.repository }}"
+
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            PIPELINE="deploy-dev"
+            BRANCH="${{ github.event.workflow_run.head_branch }}"
+            RUN_URL="${{ github.event.workflow_run.html_url }}"
+          else
+            PIPELINE="master merge"
+            BRANCH="${{ github.ref_name }}"
+            RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+          MSG="✅ ${PIPELINE} succeeded
+          Branch: ${BRANCH}
+          Repository: ${REPO_NAME}
+          Repo link: ${REPO_URL}
+          Pipeline run: ${RUN_URL}"
+
+          RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "parse_mode=HTML")
+
+          echo "Telegram response: $RESP"
+          if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
+            echo "::error::Telegram sendMessage failed: $RESP"
+            exit 1
+          fi
