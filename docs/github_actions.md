@@ -58,7 +58,7 @@ The checks run even when a push only changes `.md` docs, so gitleaks still scans
 4. **Set up SAM CLI** — installs `sam`.
 5. **Build Lambda** — `sam build` installs production dependencies from `src/package.json` and packages the function.
 6. **Deploy stack** — `sam deploy` creates/updates the `isp-soa-automation` CloudFormation stack, passing every Lambda environment value as `--parameter-overrides`.
-7. **`notify` job** (`needs: deploy`, `if: needs.deploy.result == 'success'`) — Telegram success message (branch, author, repo link, pipeline link) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
+7. **`notify` job** (`needs: deploy`, `if: needs.deploy.result == 'success'`) — Telegram success message (environment, author, branch, GitHub Action list, repository + pipeline links, Manila timestamp) using the `production` environment's `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 
 **Values used:**
 
@@ -93,7 +93,7 @@ gates    DMs you on        polls your Telegram reply     merge       Telegram
 
 **Job 1 — `ci`:** `uses: ./.github/workflows/ci.yml` (the seven gates). The DM only goes out after every gate passes — CI first, approval second.
 
-**Job 2 — `notify`:** Sends a Telegram message with the PR number, title and URL: "Reply YES to run checks and merge, or NO to reject." The PR number comes from `github.event.pull_request.number` (with a `gh pr list` fallback for `workflow_dispatch` runs), then details are fetched with `gh pr view`. Validates the bot token (logs length/prefix/suffix for diagnostics) and fails if `sendMessage` does not return `ok: true`. Outputs `notified_at` (unix timestamp of the sent message) and `pr`.
+**Job 2 — `notify`:** Sends a Telegram message with the PR number, title and URL: "Reply YES to run checks and merge, or NO to reject." The PR number comes from `github.event.pull_request.number` (with a `gh pr list` fallback for `workflow_dispatch` runs), then details are fetched with `gh pr view`. Validates the bot token (logs length/prefix/suffix for diagnostics) and fails if `sendMessage` does not return `ok: true`. Outputs `notified_at` (unix timestamp of the sent message) and `pr`. The DM is sent with Telegram HTML parse mode (YES / NO renders **bold**) and link previews disabled; the PR title is HTML-escaped so it can't break parsing.
 
 **Job 3 — `wait-for-approval`:** Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `offset` cursor, filtering for a message in your chat that arrived **after** `notified_at` (so a "yes" left over from a previous run can't accidentally approve). `timeout-minutes: 30` caps the wait.
 
