@@ -181,7 +181,7 @@ jobs:
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           TS="$(TZ='Asia/Manila' date +'%m/%d/%Y %I:%M%p')"
           MSG="Environment: Production ✅
-          Github Action: [ci] [approve-merge-to-master]
+          Github Action: CI, approve-merge-to-master
           Author: ${AUTHOR}
           Branch: master
           Repository: ${REPO_NAME}
@@ -192,6 +192,7 @@ jobs:
             --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
             --data-urlencode "parse_mode=HTML")
+            --data-urlencode "disable_web_page_preview=true")
           echo "Telegram response: $RESP"
           if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
             echo "::error::Telegram sendMessage failed: $RESP"
