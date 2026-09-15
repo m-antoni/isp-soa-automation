@@ -13,7 +13,7 @@ Built with the AWS Serverless Application Model (SAM):
 | Technology | Role |
 | ---------- | ---- |
 | **AWS Lambda** | Serverless function (`isp-soa-automation`) that scrapes the Converge portal, unlocks the PDF, and stages it in S3 |
-| **Amazon EventBridge** | Scheduled event source (`template.yaml`) that invokes the Lambda on a cron schedule |
+| **Amazon EventBridge** | Scheduled event source (`template.yaml`) that invokes the Lambda on the **25th of every month** at 00:00 UTC (`cron(0 0 25 * ? *)`) |
 | **Amazon S3** | Private, SSE-S3-encrypted, versioned bucket for staging SOA PDFs (30-day expiration) |
 | **Node.js 22 (ESM)** | Lambda runtime; `src/` contains the handler, Gmail/OTP client, and pure helpers |
 | **AWS SAM** | Build, package, and deploy the stack via `sam build` / `sam deploy` |
