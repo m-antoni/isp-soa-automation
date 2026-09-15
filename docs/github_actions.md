@@ -7,7 +7,7 @@ This repository uses four GitHub Actions workflows. This page explains what each
 | Workflow | File | Purpose |
 | -------- | ---- | ------- |
 | CI (dev) | `.github/workflows/ci-dev.yml` | Quality gates on every push to `dev`; chains `deploy-dev` |
-| CI | `.github/workflows/ci-pr.yml` | Quality gates on PRs to `master` and master pushes; chains `approve-merge-to-master` |
+| CI | `.github/workflows/ci-pr.yml` | Quality gates on PRs to `master`; chains `approve-merge-to-master` |
 | deploy-dev | `.github/workflows/deploy-dev.yml` | Deploy the stack to the dev environment on pushes to `dev` |
 | approve-merge-to-master | `.github/workflows/approve-merge-to-master.yml` | Telegram bot asks you to approve a PR to `master`, then runs checks and auto-merges |
 
@@ -20,7 +20,7 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 Two files share identical quality gates but run on **separate event streams**, so `workflow_run` each chained workflow by name — no skipped downstream runs in the Actions list:
 
 - **`CI (dev)`** (`ci-dev.yml`) — every push to the `dev` branch (+ manual `workflow_dispatch`). A successful run chains **deploy-dev**.
-- **`CI`** (`ci-pr.yml`) — every pull request targeting `master` and every push to `master` (+ manual `workflow_dispatch`). A successful run of a `dev → master` PR chains **approve-merge-to-master**.
+- **`CI`** (`ci-pr.yml`) — every pull request targeting `master` (+ manual `workflow_dispatch`). A successful run of a `dev → master` PR chains **approve-merge-to-master**. There is intentionally no `push: [master]` trigger — master only changes via the approve-merge flow (which re-runs the checks before merging), and a master-push CI would create a skipped approval run in the Actions list.
 
 The check runs even when a push only changes `.md` docs, so gitleaks still scans for secrets in them.
 
@@ -81,7 +81,8 @@ There is also a **`notify` job** (`needs: deploy`, `if: needs.deploy.result == '
 
 **Triggers:**
 
-- `workflow_run` — fires when the `CI` workflow completes **for a pull request** (head branch `dev`), i.e. runs chained after a successful `dev → master` PR. The trigger also filters `branches: [dev]`, so CI runs for PRs from other branches don't spawn this workflow. Order: `CI → approve-merge-to-master`.
+- `workflow_run` — fires when the `CI` workflow completes. The `notify` job gate only passes for a **successful** CI run whose **event is `pull_request`** and **head branch is `dev`** (i.e. a `dev → master` PR), so order is `CI → approve-merge-to-master`.
+  - Do **not** add a `branches:` filter to the `workflow_run` trigger: GitHub evaluates it against the wrong ref and it silently blocks the whole trigger (see community discussion #72097 / actions/runner issue #1628). The job gate provides the filtering instead.
 - manual `workflow_dispatch` (useful for testing the bot flow without opening a PR)
 
 **Environment:** `production` (all jobs declare it so `TELEGRAM_*` / `GH_BOT_TOKEN` secrets resolve).
@@ -98,7 +99,7 @@ Telegram                     │                    audits, then
 ```
 
 **Job 1 — `notify`:**
-Sends a Telegram message with the PR number, title and URL: "Reply YES to run checks and merge, or NO to reject." The PR details are fetched with `gh pr view` (PR number comes from the triggering CI run's `pull_requests`). Validates the bot token (logs length/prefix/suffix for diagnostics) and fails if `sendMessage` does not return `ok: true`. Outputs `notified_at` (unix timestamp of the sent message).
+Sends a Telegram message with the PR number, title and URL: "Reply YES to run checks and merge, or NO to reject." The PR number comes from the triggering CI run's `pull_requests` payload (the `gh pr list` fallback resolves it in `workflow_dispatch` runs), then details are fetched with `gh pr view`. Validates the bot token (logs length/prefix/suffix for diagnostics) and fails if `sendMessage` does not return `ok: true`. Outputs `notified_at` (unix timestamp of the sent message) and `pr`.
 
 **Job 2 — `wait-for-approval`:**
 Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `offset` cursor, filtering for a message in your chat that arrived **after** `notified_at` (so a "yes" left over from a previous run can't accidentally approve). `timeout-minutes: 30` caps the wait.
@@ -134,7 +135,6 @@ Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `o
 ```
  push to dev ──────────► CI (dev) ──► deploy-dev
  PR dev → master ──────► CI ──► approve-merge-to-master
- push to master ───────► CI (validates the merge)
 ```
 
 `CI (dev)` is the fast feedback loop for dev pushes and the gate ahead of deploys; `CI` gates PRs to `master`; the Telegram workflow is the human gate before anything lands on `master`.

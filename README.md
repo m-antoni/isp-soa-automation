@@ -16,7 +16,7 @@ Built with the AWS Serverless Application Model (SAM):
 .
 ├── .github/workflows/                    # GitHub Actions
 │   ├── ci-dev.yml                        # CI on push to `dev` (lint, validate, test, audit, spell, leaks)
-│   ├── ci-pr.yml                         # CI on PRs to `master` and master pushes
+│   ├── ci-pr.yml                         # CI on PRs to `master`
 │   ├── deploy-dev.yml                    # Deploy to dev after CI on push to `dev` (notifies on Telegram)
 │   └── approve-merge-to-master.yml       # Telegram approve-to-merge for PRs to `master`
 ├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
@@ -218,8 +218,10 @@ so each one only chains the workflow meant for it (no skipped downstream runs):
 
 - **`CI (dev)`** (`ci-dev.yml`) — runs on every push to `dev`; on success it
   chains `deploy-dev`.
-- **`CI`** (`ci-pr.yml`) — runs on pull requests to `master` and on pushes to
-  `master`; on success of a `dev → master` PR it chains `approve-merge-to-master`.
+- **`CI`** (`ci-pr.yml`) — runs on pull requests to `master`; on success of a
+  `dev → master` PR it chains `approve-merge-to-master`. No CI runs on master
+  pushes — master only changes via the approval flow, which re-runs checks
+  before merging.
 
 Gates:
 
