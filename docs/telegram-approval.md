@@ -15,7 +15,7 @@ The workflow file is `.github/workflows/approve-merge-to-master.yml`.
 | ---- | -------------------- | ------------ |
 | 1 | `notify` | Someone opens a PR to `master`. The workflow asks Telegram: "send a message to my chat". You get a DM from your bot like: *"New PR #12 'Update login' wants to merge into master. Reply YES to run checks and merge, or NO to reject."* |
 | 2 | `wait-for-approval` | The workflow keeps checking Telegram every ~20 seconds, looking for a **new** message from **your** chat ID. If you reply `yes`/`y`/`approve` → it continues. If `no`/`n`/`reject` → it cancels the whole run. If you don't reply within 30 minutes, it cancels ("timeout"). |
-| 3 | `merge` | Runs the checks (`npm ci` + `npm test` inside `src/`), then merges your PR using `gh pr merge --rebase --delete-branch` — i.e. rebase-merge into master (linear history) and delete the branch. |
+| 3 | `merge` | Runs the checks (`npm ci` + `npm test` inside `src/`), then merges your PR using `gh pr merge --merge` — a merge commit into master, and **keeps the `dev` branch**. |
 
 **Important detail:** the workflow talks to Telegram using Telegram's
 `getUpdates` endpoint (long-polling), so there is **no server or hosting to pay
@@ -117,7 +117,7 @@ button for you (the normal workflow token is not allowed to merge to `master`).
 
    > **Both permissions are required.** Without `Pull requests: Read and write`
    > the merge is denied; without `Contents: Read and write` the merge fails with
-   > `GraphQL: Resource not accessible by personal access token` (the rebase merge
+   > `GraphQL: Resource not accessible by personal access token` (the merge
    > and branch delete also need repo write access). If you already created the
    > token, click **Edit** on it and add whichever is missing — the token value
    > stays the same, so you only need to re-copy it into the secret if you
@@ -158,8 +158,8 @@ button for you (the normal workflow token is not allowed to merge to `master`).
    to `master`**.
 2. Check Telegram — your bot should DM you the PR details.
 3. Reply `yes` (or `y`, `approve`):
-   - Workflow goes to the `merge` job → runs `npm ci` and `npm test` → rebases
-     the PR onto master → deletes the branch.
+   - Workflow goes to the `merge` job → runs `npm ci` and `npm test` → creates a
+     merge commit on master → keeps the `dev` branch.
 4. Reply `no` instead, to test rejection:
    - The workflow stops and the run shows as failed (that is expected for a
      rejection).

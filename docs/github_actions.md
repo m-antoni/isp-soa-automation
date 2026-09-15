@@ -84,8 +84,8 @@ The checks run even when a push only changes `.md` docs, so gitleaks still scans
 
 ```text
 ci ──► notify ──────────► wait-for-approval ──────────► merge ──► notify-success
-gates    DMs you on        polls your Telegram reply     rebase+      Telegram
-         Telegram                    │                   delete      success msg
+gates    DMs you on        polls your Telegram reply     merge       Telegram
+         Telegram                    │                   commit      success msg
                                      │ yes
                                      ▼
                      (invalid reply → bot nudges you)
@@ -105,7 +105,7 @@ gates    DMs you on        polls your Telegram reply     rebase+      Telegram
 1. Checks out `master`, sets up Node 22.
 2. **Run checks** — `npm ci` + `npm test` (Vitest suite).
 3. **Audit dependencies** — `npm audit --audit-level=high`.
-4. **Merge PR** — `gh pr merge <number> --rebase --delete-branch` using `GH_BOT_TOKEN`.
+4. **Merge PR** — `gh pr merge <number> --merge` using `GH_BOT_TOKEN` (merge commit; **keeps the `dev` branch**).
 
 **Job 5 — `notify-success`** (`needs: merge`, runs only if the merge job actually succeeded): sends a Telegram success message (branch `master`, author, repo link, pipeline link) using `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 
@@ -132,12 +132,13 @@ gates    DMs you on        polls your Telegram reply     rebase+      Telegram
 
 `deploy-dev` is the fast feedback loop for dev pushes and the gate ahead of deploys; `approve-merge-to-master` runs the same gates, then adds the Telegram human gate before anything lands on `master`.
 
-> **After an approved merge:** the merge uses `--delete-branch`, which deletes the
-> remote `dev` branch. Recreate it from `master`:
+> **After an approved merge:** the merge uses a **merge commit** and keeps `dev`
+> on GitHub. To bring any master-only changes into `dev` (a "sync down"), run:
 >
 > ```bash
-> git fetch origin
-> git checkout master && git pull --ff-only
-> git branch -D dev && git checkout -b dev
+> git checkout dev && git merge origin/master
 > git push origin dev
 > ```
+>
+> Conflicts only appear when master's changes and dev's own work touch the same
+> lines — resolve them as usual, then push.

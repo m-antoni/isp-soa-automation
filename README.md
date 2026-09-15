@@ -218,9 +218,10 @@ pipeline workflows, so every gate runs in exactly one place:
 - **`deploy-dev`** (`deploy-dev.yml`) — runs on every push to `dev`; executes CI,
   then deploys to the dev environment, then notifies on Telegram.
 - **`approve-merge-to-master`** (`approve-merge-to-master.yml`) — runs on PRs to
-  `master`; executes CI, then Telegram-DMs for approval, then merges (`--rebase`,
-  deletes the branch) and notifies. No CI runs on master pushes — master only
-  changes via the approval flow, which re-runs checks before merging.
+  `master`; executes CI, then Telegram-DMs for approval, then merges with a merge
+  commit and notifies. The `dev` branch is kept after merging. No CI runs on
+  master pushes — master only changes via the approval flow, which re-runs
+  checks before merging.
 
 Gates:
 
@@ -293,16 +294,14 @@ sam local invoke SoaAutomationFunction -e events/event.json \
 
 `.github/workflows/approve-merge-to-master.yml` lets you approve PRs to `master` from
 your phone: the workflow runs after a **successful CI run** on a `dev → master` PR,
-DMs you on Telegram, you reply `yes`/`no`, and it runs checks then auto-merges with
-a rebase (or rejects).
+DMs you on Telegram, you reply `yes`/`no`, and it runs checks then auto-merges
+(or rejects).
 
-> **Note:** the merge deletes the `dev` branch (`--delete-branch`). After each
-> approved merge, recreate it from `master`:
+> **Note:** merges use a merge commit and **keep `dev`** (no `--delete-branch`). To
+> sync `dev` with any master-only changes, merge master down occasionally:
 >
 > ```bash
-> git fetch origin
-> git checkout master && git pull --ff-only
-> git branch -D dev && git checkout -b dev
+> git checkout dev && git merge origin/master
 > git push origin dev
 > ```
 

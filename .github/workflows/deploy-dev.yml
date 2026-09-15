@@ -102,13 +102,16 @@ jobs:
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           TS="$(TZ='Asia/Manila' date +'%m/%d/%Y %I:%M%p')"
-          MSG="Environment: Dev ✅
-          Github Action: CI, deploy-dev
+          MSG="Environment: <b>Dev</b> ✅
           Author: ${AUTHOR}
           Branch: ${BRANCH}
+          Github Action: 
+            - CI
+            - deploy-dev
           Repository: ${REPO_NAME}
           Repo link: ${REPO_URL}
           Pipeline run: ${RUN_URL}
+
           ⏱️ ${TS}"
           RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
