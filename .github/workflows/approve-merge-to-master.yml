@@ -16,7 +16,7 @@
 # - jobs.wait-for-approval: polls getUpdates; YES → approved=yes, NO → fail,
 #                           anything else → nudge to reply YES or NO
 # - jobs.merge (if yes): checks out master, re-runs tests+audit,
-#                        gh pr merge --rebase --delete-branch
+#                        gh pr merge --merge (keeps dev)
 # - jobs.notify-success: Telegram success after merge
 
 name: approve-merge-to-master
@@ -160,7 +160,7 @@ jobs:
           GH_PR_NUMBER: ${{ needs.notify.outputs.pr }}
           REPO: ${{ github.repository }}
         run: |
-          gh pr merge "$GH_PR_NUMBER" -R "$REPO" --rebase --delete-branch
+          gh pr merge "$GH_PR_NUMBER" -R "$REPO" --merge
 
   notify-success:
     runs-on: ubuntu-latest
