@@ -19,6 +19,9 @@ on:
       - dev
   workflow_dispatch:
 
+permissions:
+  actions: read
+
 concurrency:
   group: deploy-dev
   cancel-in-progress: true
@@ -30,6 +33,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Wait for CI to pass
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          attempts=0
+          while [ $attempts -lt 90 ]; do
+            attempts=$((attempts + 1))
+            run=$(gh run list --workflow CI --commit "$HEAD_SHA" --limit 1 --json status,conclusion --jq '.[0]')
+            status=$(echo "$run" | jq -r '.status')
+            conclusion=$(echo "$run" | jq -r '.conclusion')
+            echo "CI run status: ${status}, conclusion: ${conclusion}"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI passed — proceeding to deploy."
+                exit 0
+              fi
+              echo "::error::CI failed with conclusion: ${conclusion}. Not deploying."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::Timed out waiting for CI to finish."
+          exit 1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,3 +96,37 @@ jobs:
                MailFrom=${{ secrets.MAIL_FROM }} \
                MailTo=${{ vars.MAIL_TO }} \
                GmailAppPassword=${{ secrets.GMAIL_SMTP_APP_PASSWORD }}"
+
+  notify:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: deploy
+    if: success()
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          REPO_NAME: ${{ github.repository }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          AUTHOR: ${{ github.actor }}
+        run: |
+          BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
+          CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
+          MSG="Github Action: deploy-dev ✅ the status of CI succeeded
+          Author: ${AUTHOR}
+          Branch: ${BRANCH}
+          Repository: ${REPO_NAME}
+          Repo link: ${REPO_URL}
+          Pipeline run: ${RUN_URL}"
+          RESP=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "parse_mode=HTML")
+          echo "Telegram response: $RESP"
+          if ! echo "$RESP" | jq -e '.ok == true' > /dev/null; then
+            echo "::error::Telegram sendMessage failed: $RESP"
+            exit 1
+          fi
