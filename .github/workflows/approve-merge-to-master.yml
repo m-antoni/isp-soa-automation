@@ -1,51 +1,63 @@
 # approve-merge-to-master — Telegram human gate before anything merges.
 #
 # Triggers:
-# - pull_request opened targeting master (e.g. dev -> master)
+# - workflow_run: fires when the CI workflow completes; the flow only runs for
+#                 a successful CI run of a pull request to master from dev
 # - manual workflow_dispatch (to test the bot flow without a PR)
 #
 # Sections:
 # - concurrency: per-PR (per dispatch run) — one approval flow at a time
-# - permissions: contents read only (the merge uses GH_BOT_TOKEN, not GITHUB_TOKEN)
+# - permissions: contents read; merge uses GH_BOT_TOKEN, not GITHUB_TOKEN;
+#                PR details are fetched with gh (needs pull-requests read)
 # - jobs.notify:             DMs the PR details to Telegram; outputs notified_at
 # - jobs.wait-for-approval:  polls getUpdates for a reply newer than notified_at;
 #                            YES → approved=yes, NO → fails, other → bot nudges you
 # - jobs.merge (if 'yes'):   checkouts master, runs npm ci + tests, npm audit,
 #                            then gh pr merge --rebase --delete-branch
+# - jobs.notify-success:     Telegram success message after a successful merge
 
 name: approve-merge-to-master
 
 on:
-  pull_request:
-    types: [opened]
-    branches: [master]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
-  group: approve-master-${{ github.event.number || github.run_id }}
+  group: approve-master-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   notify:
     runs-on: ubuntu-latest
     environment: production
+    # Only proceed when the completed CI run was a successful PR to master.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_branch == 'dev' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
     outputs:
       notified_at: ${{ steps.send.outputs.ts }}
     steps:
       - name: Send Telegram notification
         id: send
         env:
+          GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           PR="$PR_NUMBER"
-          TITLE="$PR_TITLE"
-          URL="$PR_URL"
+          TITLE="$(gh pr view "$PR" --json title --jq .title)"
+          URL="$(gh pr view "$PR" --json url --jq .url)"
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           echo "Bot token length: ${#BOT_TOKEN} (Telegram tokens are 46 chars)"
@@ -134,7 +146,7 @@ jobs:
       - name: Merge PR
         env:
           GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
-          GH_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           gh pr merge "$GH_PR_NUMBER" --rebase --delete-branch
 
