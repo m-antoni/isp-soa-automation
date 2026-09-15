@@ -151,10 +151,12 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRIGGERED_BY: ${{ github.actor }}
         run: |
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           MSG="Github Action: ✅ approve-merge-to-master : succeeded
+          Triggered by: ${TRIGGERED_BY}
           Branch: master
           Repository: ${REPO_NAME}
           Repo link: ${REPO_URL}
