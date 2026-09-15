@@ -23,6 +23,7 @@ on:
 jobs:
   send:
     runs-on: ubuntu-latest
+    environment: production
     # For workflow_run, only proceed when the triggering run succeeded.
     if: >-
       github.event_name == 'push' ||
