@@ -1,31 +1,24 @@
-# CI (dev) — quality gates on every push to the dev branch. A successful run
-# chains deploy-dev (via workflow_run) so that deploy only happens after CI.
+# CI — reusable quality-gate workflow (single source of truth for all checks).
 #
-# Sections:
-# - on: triggers — push to dev + manual workflow_dispatch
-# - concurrency: one run per branch at a time; a newer run cancels an older one
-# - permissions: contents: read (least privilege)
-# - jobs.check steps in order:
-#   1. validate config    → every secrets.* / vars.* used has a matching
-#                           entry in .github/secrets-manifest.txt / vars-manifest.txt
-#   2. actionlint         → lints all workflow YAML files
-#   3. gitleaks           → scans full git history for leaked secrets
+# Called by deploy-dev.yml and approve-merge-to-master.yml with:
+#   uses: ./.github/workflows/ci.yml
+# Same-repo references resolve at the CALLER's commit (not the default
+# branch), so no activation dance is needed and there is no workflow_run.
+#
+# Runs 7 gates in one `check` job:
+#   1. validate config  → every secrets.* / vars.* used has a matching entry in
+#                         .github/secrets-manifest.txt / vars-manifest.txt
+#   2. actionlint       → lints all workflow YAML files
+#   3. gitleaks         → scans full git history for leaked secrets
 #   4. spelling (codespell) → spell-checks all source/docs files
-#   5. sam validate       → validates template.yaml
-#   6. npm ci + npm test  → installs lockfile deps, runs the Vitest unit tests
-#   7. npm audit          → fails if any dependency has a high/critical CVE
+#   5. sam validate     → validates template.yaml
+#   6. npm ci + npm test → installs lockfile deps, runs the Vitest unit tests
+#   7. npm audit        → fails if any dependency has a high/critical CVE
 
-name: CI (dev)
+name: CI
 
 on:
-  push:
-    branches:
-      - dev
-  workflow_dispatch:
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 permissions:
   contents: read

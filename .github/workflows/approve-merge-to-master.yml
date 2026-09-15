@@ -1,55 +1,48 @@
 # approve-merge-to-master — Telegram human gate before anything merges.
 #
-# Triggers:
-# - workflow_run: fires when the CI workflow completes; the notify job gate
-#                 only passes for a SUCCESSFUL CI run of a pull request whose
-#                 head branch is dev (so dev → master PRs start the flow)
-# - manual workflow_dispatch (to test the bot flow without a PR)
+# The CI checks come first via the reusable .github/workflows/ci.yml, so the
+# flow is: ci → notify (DM) → wait-for-approval → merge → notify-success.
+# Self-activating plain pull_request trigger (no workflow_run, no default
+# branch dependency); the DM only ever goes out after all checks pass.
 #
-# Note: do NOT add a `branches:` filter to the workflow_run trigger — GitHub
-# evaluates it against the wrong ref and it silently blocks the trigger
-# (see community discussion #72097 / actions/runner #1628). The job-level
-# `head_branch == 'dev'` gate provides the filtering instead.
+# Triggers:
+# - pull_request targeting master (+ manual workflow_dispatch for testing)
 #
 # Sections:
-# - concurrency: per-PR (per dispatch run) — one approval flow at a time
-# - permissions: contents read; merge uses GH_BOT_TOKEN, not GITHUB_TOKEN;
-#                PR details are fetched with gh (needs pull-requests read)
-# - jobs.notify:             DMs the PR details to Telegram; outputs notified_at
-# - jobs.wait-for-approval:  polls getUpdates for a reply newer than notified_at;
-#                            YES → approved=yes, NO → fails, other → bot nudges you
-# - jobs.merge (if 'yes'):   checkouts master, runs npm ci + tests, npm audit,
-#                            then gh pr merge --rebase --delete-branch
-# - jobs.notify-success:     Telegram success message after a successful merge
+# - concurrency: per-PR — one approval flow at a time
+# - permissions: contents read; merge uses GH_BOT_TOKEN, not GITHUB_TOKEN
+# - jobs.ci (uses ./.github/workflows/ci.yml): the 7 quality gates
+# - jobs.notify (needs ci): DMs PR details; outputs notified_at + pr
+# - jobs.wait-for-approval: polls getUpdates; YES → approved=yes, NO → fail,
+#                           anything else → nudge to reply YES or NO
+# - jobs.merge (if yes): checks out master, re-runs tests+audit,
+#                        gh pr merge --rebase --delete-branch
+# - jobs.notify-success: Telegram success after merge
 
 name: approve-merge-to-master
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 concurrency:
-  group: approve-master-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  group: approve-master-${{ github.event.pull_request.number || github.run_id }}
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   notify:
     runs-on: ubuntu-latest
     environment: production
-    # Only proceed when the completed CI run was a successful PR to master.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'pull_request' &&
-        github.event.workflow_run.head_branch == 'dev' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      )
+    needs: ci
+    if: needs.ci.result == 'success'
     outputs:
       notified_at: ${{ steps.send.outputs.ts }}
       pr: ${{ steps.send.outputs.pr }}
@@ -60,7 +53,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           PR="$PR_NUMBER"
           if [ -z "$PR" ]; then
@@ -68,7 +61,7 @@ jobs:
           fi
           echo "Resolved PR number: $PR"
           if [ -z "$PR" ]; then
-            echo "::error::Could not resolve the pull request number from the workflow_run payload or gh pr list"
+            echo "::error::Could not resolve the pull request number from the event payload or gh pr list"
             exit 1
           fi
           TITLE="$(gh pr view "$PR" --json title --jq .title)"
@@ -141,7 +134,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     needs: [wait-for-approval, notify]
-
     if: needs.wait-for-approval.outputs.approved == 'yes'
     steps:
       - uses: actions/checkout@v4
@@ -183,7 +175,7 @@ jobs:
         run: |
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
-          MSG="Github Action: ci-pr -> approve-merge-to-master ✅
+          MSG="Github Action: approve-merge-to-master ✅
           Author: ${AUTHOR}
           Branch: master
           Repository: ${REPO_NAME}
