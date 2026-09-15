@@ -15,7 +15,8 @@ Built with the AWS Serverless Application Model (SAM):
 ```
 .
 ├── .github/workflows/                    # GitHub Actions
-│   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit, spell, leaks)
+│   ├── ci-dev.yml                        # CI on push to `dev` (lint, validate, test, audit, spell, leaks)
+│   ├── ci-pr.yml                         # CI on PRs to `master` and master pushes
 │   ├── deploy-dev.yml                    # Deploy to dev after CI on push to `dev` (notifies on Telegram)
 │   └── approve-merge-to-master.yml       # Telegram approve-to-merge for PRs to `master`
 ├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
@@ -210,9 +211,17 @@ npm test
 
 SAM strips devDependencies (including Vitest) during `sam build`, so these stay out of the Lambda deployment package.
 
-### CI workflow (`.github/workflows/ci.yml`)
+### CI workflows (`.github/workflows/ci-dev.yml`, `.github/workflows/ci-pr.yml`)
 
-Runs on every push and pull request:
+Two CI workflows share the same quality gates but run on separate event streams,
+so each one only chains the workflow meant for it (no skipped downstream runs):
+
+- **`CI (dev)`** (`ci-dev.yml`) — runs on every push to `dev`; on success it
+  chains `deploy-dev`.
+- **`CI`** (`ci-pr.yml`) — runs on pull requests to `master` and on pushes to
+  `master`; on success of a `dev → master` PR it chains `approve-merge-to-master`.
+
+Gates:
 
 | Step                           | What it does                                                                                                               |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +234,7 @@ Runs on every push and pull request:
 | `npm audit --audit-level=high` | Fails on high/critical CVEs                                                                                                |
 
 A concurrency group prevents duplicate runs for the same branch. Details for all
-three workflows (orders, triggers, secrets used): **[docs/github_actions.md](docs/github_actions.md)**.
+four workflows (orders, triggers, secrets used): **[docs/github_actions.md](docs/github_actions.md)**.
 
 ## Local testing
 

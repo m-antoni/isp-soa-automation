@@ -1,7 +1,8 @@
-# CI — quality gates on every push and pull request.
+# CI (dev) — quality gates on every push to the dev branch. A successful run
+# chains deploy-dev (via workflow_run) so that deploy only happens after CI.
 #
 # Sections:
-# - on: triggers — every push (any branch) + every pull request
+# - on: triggers — push to dev + manual workflow_dispatch
 # - concurrency: one run per branch at a time; a newer run cancels an older one
 # - permissions: contents: read (least privilege)
 # - jobs.check steps in order:
@@ -14,12 +15,13 @@
 #   6. npm ci + npm test  → installs lockfile deps, runs the Vitest unit tests
 #   7. npm audit          → fails if any dependency has a high/critical CVE
 
-name: CI
+name: CI (dev)
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

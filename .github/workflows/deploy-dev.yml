@@ -1,7 +1,7 @@
 # deploy-dev — deploys the SAM stack AFTER CI passes.
 #
 # Sections:
-# - on: trigger — workflow_run: fires when the CI workflow completes; the
+# - on: trigger — workflow_run: fires when the CI (dev) workflow completes; the
 #                 deploy job only runs for a successful CI run of a push to dev.
 #                 workflow_dispatch: manual deploy anytime (bypasses the CI gate).
 # - concurrency: deploy-dev — one deploy at a time; a newer one cancels a pending one
@@ -19,7 +19,7 @@ name: deploy-dev
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: ["CI (dev)"]
     types: [completed]
   workflow_dispatch:
 

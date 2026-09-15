@@ -1,12 +1,13 @@
 # GitHub Actions Workflows
 
-This repository uses three GitHub Actions workflows. This page explains what each one does, when it triggers, and what secrets/values it needs.
+This repository uses four GitHub Actions workflows. This page explains what each one does, when it triggers, and what secrets/values it needs.
 
 ## Overview
 
 | Workflow | File | Purpose |
 | -------- | ---- | ------- |
-| CI | `.github/workflows/ci.yml` | Quality gates on every push/PR |
+| CI (dev) | `.github/workflows/ci-dev.yml` | Quality gates on every push to `dev`; chains `deploy-dev` |
+| CI | `.github/workflows/ci-pr.yml` | Quality gates on PRs to `master` and master pushes; chains `approve-merge-to-master` |
 | deploy-dev | `.github/workflows/deploy-dev.yml` | Deploy the stack to the dev environment on pushes to `dev` |
 | approve-merge-to-master | `.github/workflows/approve-merge-to-master.yml` | Telegram bot asks you to approve a PR to `master`, then runs checks and auto-merges |
 
@@ -14,11 +15,16 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 
 ---
 
-## 1. CI (`.github/workflows/ci.yml`)
+## 1. CI workflows (`.github/workflows/ci-dev.yml` + `.github/workflows/ci-pr.yml`)
 
-**Triggers:** every push to any branch and every pull request. (Docs are *not* skipped — a push that only changes `.md` docs still runs CI so gitleaks scans for secrets in them.)
+Two files share identical quality gates but run on **separate event streams**, so `workflow_run` each chained workflow by name — no skipped downstream runs in the Actions list:
 
-**What it does:**
+- **`CI (dev)`** (`ci-dev.yml`) — every push to the `dev` branch (+ manual `workflow_dispatch`). A successful run chains **deploy-dev**.
+- **`CI`** (`ci-pr.yml`) — every pull request targeting `master` and every push to `master` (+ manual `workflow_dispatch`). A successful run of a `dev → master` PR chains **approve-merge-to-master**.
+
+The check runs even when a push only changes `.md` docs, so gitleaks still scans for secrets in them.
+
+**What each does:**
 
 | Step | Purpose |
 | ---- | ------- |
@@ -43,7 +49,7 @@ Secrets live in GitHub **environments**, not at the repo level. The `deploy-dev`
 ## 2. deploy-dev (`.github/workflows/deploy-dev.yml`)
 
 **Triggers:**
-- `workflow_run` — fires when the `CI` workflow completes. The deploy job only runs for **successful** CI runs from a **push** to `dev`. CI runs triggered by PRs (to master) do not trigger this.
+- `workflow_run` — fires when the `CI (dev)` workflow completes. The deploy job only runs for **successful** pushes to `dev`. PR CI runs target the `CI` workflow and do not trigger this.
 - manual `workflow_dispatch` from the Actions tab (bypasses the CI gate).
 
 **Environment:** `development` (all env-scoped secrets/vars come from there).
@@ -75,7 +81,7 @@ There is also a **`notify` job** (`needs: deploy`, `if: needs.deploy.result == '
 
 **Triggers:**
 
-- `workflow_run` — fires when the `CI` workflow completes. The flow only runs for **successful** CI runs of a **pull request** (head branch `dev`) to master. So the order is `CI → approve-merge-to-master`.
+- `workflow_run` — fires when the `CI` workflow completes **for a pull request** (head branch `dev`), i.e. runs chained after a successful `dev → master` PR. The trigger also filters `branches: [dev]`, so CI runs for PRs from other branches don't spawn this workflow. Order: `CI → approve-merge-to-master`.
 - manual `workflow_dispatch` (useful for testing the bot flow without opening a PR)
 
 **Environment:** `production` (all jobs declare it so `TELEGRAM_*` / `GH_BOT_TOKEN` secrets resolve).
@@ -126,12 +132,12 @@ Long-polls the bot's `getUpdates` endpoint (20 s timeout per request) with an `o
 ## How they fit together
 
 ```
- push to dev ──────────► CI ──► deploy-dev
- push to a branch ─────► CI
+ push to dev ──────────► CI (dev) ──► deploy-dev
  PR dev → master ──────► CI ──► approve-merge-to-master
+ push to master ───────► CI (validates the merge)
 ```
 
-CI runs on everything and is the fast feedback loop; the Telegram workflow is the human gate before anything lands on `master`.
+`CI (dev)` is the fast feedback loop for dev pushes and the gate ahead of deploys; `CI` gates PRs to `master`; the Telegram workflow is the human gate before anything lands on `master`.
 
 > **`workflow_run` activation:** `workflow_run` triggers are only read from the
 > **default branch** (`master`), so these flows only work once the workflow files
