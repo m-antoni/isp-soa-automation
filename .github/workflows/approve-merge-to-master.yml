@@ -51,21 +51,22 @@ jobs:
         id: send
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           PR="$PR_NUMBER"
           if [ -z "$PR" ]; then
-            PR="$(gh pr list --base master --head dev --state open --json number --jq '.[0].number // empty')"
+            PR="$(gh pr list -R "$REPO" --base master --head dev --state open --json number --jq '.[0].number // empty')"
           fi
           echo "Resolved PR number: $PR"
           if [ -z "$PR" ]; then
             echo "::error::Could not resolve the pull request number from the event payload or gh pr list"
             exit 1
           fi
-          TITLE="$(gh pr view "$PR" --json title --jq .title)"
-          URL="$(gh pr view "$PR" --json url --jq .url)"
+          TITLE="$(gh pr view "$PR" -R "$REPO" --json title --jq .title)"
+          URL="$(gh pr view "$PR" -R "$REPO" --json url --jq .url)"
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           echo "Bot token length: ${#BOT_TOKEN} (Telegram tokens are 46 chars)"
@@ -155,8 +156,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
           GH_PR_NUMBER: ${{ needs.notify.outputs.pr }}
+          REPO: ${{ github.repository }}
         run: |
-          gh pr merge "$GH_PR_NUMBER" --rebase --delete-branch
+          gh pr merge "$GH_PR_NUMBER" -R "$REPO" --rebase --delete-branch
 
   notify-success:
     runs-on: ubuntu-latest
