@@ -154,7 +154,7 @@ jobs:
         run: |
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
-          MSG="🌐 master merge succeeded
+          MSG="Github Action: ✅ approve-merge-to-master : succeeded
           Branch: master
           Repository: ${REPO_NAME}
           Repo link: ${REPO_URL}
