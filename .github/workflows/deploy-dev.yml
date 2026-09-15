@@ -42,7 +42,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          for i in $(seq 1 90); do
+          attempts=0
+          while [ $attempts -lt 90 ]; do
+            attempts=$((attempts + 1))
             run=$(gh run list --workflow CI --commit "$HEAD_SHA" --limit 1 --json status,conclusion --jq '.[0]')
             status=$(echo "$run" | jq -r '.status')
             conclusion=$(echo "$run" | jq -r '.conclusion')
