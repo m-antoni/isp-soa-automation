@@ -1,9 +1,13 @@
 # approve-merge-to-master — Telegram human gate before anything merges.
 #
 # Triggers:
-# - workflow_run: fires when the CI workflow completes; the flow only runs for
-#                 a successful CI run of a pull request to master from dev
+# - workflow_run: fires when the CI workflow completes for a pull request to
+#                 master from dev; only those runs pass the job gate
 # - manual workflow_dispatch (to test the bot flow without a PR)
+#
+# Note: `branches: [dev]` on the workflow_run trigger filters on the triggering
+# CI run's head branch, so CI runs for PRs from other branches don't spawn this
+# workflow at all.
 #
 # Sections:
 # - concurrency: per-PR (per dispatch run) — one approval flow at a time
@@ -22,6 +26,7 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:

@@ -15,8 +15,9 @@ Built with the AWS Serverless Application Model (SAM):
 ```
 .
 ├── .github/workflows/                    # GitHub Actions
-│   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit, spell, leaks)
-│   ├── deploy-dev.yml                    # Deploy to dev on push to `dev` (waits for CI, notifies on Telegram)
+│   ├── ci-dev.yml                        # CI on push to `dev` (lint, validate, test, audit, spell, leaks)
+│   ├── ci-pr.yml                         # CI on PRs to `master` and master pushes
+│   ├── deploy-dev.yml                    # Deploy to dev after CI on push to `dev` (notifies on Telegram)
 │   └── approve-merge-to-master.yml       # Telegram approve-to-merge for PRs to `master`
 ├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
 ├── .github/vars-manifest.txt             # Allowlisted vars.NAMEs used in workflows
@@ -120,8 +121,8 @@ Setup:
 4. `MAIL_FROM` secret and `MAIL_TO` var/param control sender and recipient.
 
 Scheduled EventBridge rules trigger the whole pipeline automatically; the
-GitHub Actions workflow deploys (and it waits for CI to pass first, then
-notifies on Telegram on success):
+GitHub Actions CI runs on every push first, and a successful CI run for a push
+to `dev` then deploys and notifies on Telegram on success:
 
 - `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
 - `isp-soa-automation-email` — **removed** (was a daily-midnight test rule).
@@ -210,9 +211,17 @@ npm test
 
 SAM strips devDependencies (including Vitest) during `sam build`, so these stay out of the Lambda deployment package.
 
-### CI workflow (`.github/workflows/ci.yml`)
+### CI workflows (`.github/workflows/ci-dev.yml`, `.github/workflows/ci-pr.yml`)
 
-Runs on every push and pull request:
+Two CI workflows share the same quality gates but run on separate event streams,
+so each one only chains the workflow meant for it (no skipped downstream runs):
+
+- **`CI (dev)`** (`ci-dev.yml`) — runs on every push to `dev`; on success it
+  chains `deploy-dev`.
+- **`CI`** (`ci-pr.yml`) — runs on pull requests to `master` and on pushes to
+  `master`; on success of a `dev → master` PR it chains `approve-merge-to-master`.
+
+Gates:
 
 | Step                           | What it does                                                                                                               |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +234,7 @@ Runs on every push and pull request:
 | `npm audit --audit-level=high` | Fails on high/critical CVEs                                                                                                |
 
 A concurrency group prevents duplicate runs for the same branch. Details for all
-three workflows (orders, triggers, secrets used): **[docs/github_actions.md](docs/github_actions.md)**.
+four workflows (orders, triggers, secrets used): **[docs/github_actions.md](docs/github_actions.md)**.
 
 ## Local testing
 
@@ -283,8 +292,19 @@ sam local invoke SoaAutomationFunction -e events/event.json \
 ## Telegram Approve-to-Merge Workflow (PRs to `master`)
 
 `.github/workflows/approve-merge-to-master.yml` lets you approve PRs to `master` from
-your phone: the workflow DMs you on Telegram, you reply `yes`/`no`, and it runs
-checks then auto-merges with a rebase (or rejects).
+your phone: the workflow runs after a **successful CI run** on a `dev → master` PR,
+DMs you on Telegram, you reply `yes`/`no`, and it runs checks then auto-merges with
+a rebase (or rejects).
+
+> **Note:** the merge deletes the `dev` branch (`--delete-branch`). After each
+> approved merge, recreate it from `master`:
+>
+> ```bash
+> git fetch origin
+> git checkout master && git pull --ff-only
+> git branch -D dev && git checkout -b dev
+> git push origin dev
+> ```
 
 Full setup guide including how to get the Telegram token, the GitHub token, and
 the 3 secrets: **[docs/telegram-approval.md](docs/telegram-approval.md)**
