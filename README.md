@@ -16,7 +16,7 @@ Built with the AWS Serverless Application Model (SAM):
 .
 ├── .github/workflows/                    # GitHub Actions
 │   ├── ci.yml                            # CI on push/PR (lint, validate, test, audit, spell, leaks)
-│   ├── deploy-dev.yml                    # Deploy stack to dev on push to `dev`
+│   ├── deploy-dev.yml                    # Deploy to dev on push to `dev` (waits for CI, notifies on Telegram)
 │   └── approve-merge-to-master.yml       # Telegram approve-to-merge for PRs to `master`
 ├── .github/secrets-manifest.txt          # Allowlisted secrets.NAMEs used in workflows
 ├── .github/vars-manifest.txt             # Allowlisted vars.NAMEs used in workflows
@@ -120,7 +120,8 @@ Setup:
 4. `MAIL_FROM` secret and `MAIL_TO` var/param control sender and recipient.
 
 Scheduled EventBridge rules trigger the whole pipeline automatically; the
-GitHub Actions workflow only deploys:
+GitHub Actions workflow deploys (and it waits for CI to pass first, then
+notifies on Telegram on success):
 
 - `isp-soa-automation-monthly` — 25th of each month (00:00 UTC).
 - `isp-soa-automation-email` — **removed** (was a daily-midnight test rule).
@@ -283,7 +284,7 @@ sam local invoke SoaAutomationFunction -e events/event.json \
 
 `.github/workflows/approve-merge-to-master.yml` lets you approve PRs to `master` from
 your phone: the workflow DMs you on Telegram, you reply `yes`/`no`, and it runs
-checks then auto-merges (or rejects).
+checks then auto-merges with a rebase (or rejects).
 
 Full setup guide including how to get the Telegram token, the GitHub token, and
 the 3 secrets: **[docs/telegram-approval.md](docs/telegram-approval.md)**

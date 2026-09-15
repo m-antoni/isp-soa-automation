@@ -1,26 +1,31 @@
-# deploy-dev — deploys the SAM stack on every push to `dev`.
+# deploy-dev — deploys the SAM stack AFTER CI passes.
 #
 # Sections:
-# - on: trigger — push to the dev branch, plus manual workflow_dispatch
-# - concurrency: deploy-dev — one deploy at a time; a newer push cancels a pending one
+# - on: trigger — workflow_run: fires when the CI workflow completes; the
+#                 deploy job only runs for a successful CI run of a push to dev.
+#                 workflow_dispatch: manual deploy anytime (bypasses the CI gate).
+# - concurrency: deploy-dev — one deploy at a time; a newer one cancels a pending one
+# - permissions: actions + contents read (checkout needs `contents`)
 # - jobs.deploy (environment: development):
-#   1. checkout                 → pulls the pushed commit
+#   1. checkout                 → pulls the code
 #   2. configure-aws-cred       → assumes AWS creds into vars.AWS_REGION
 #   3. setup-sam                → installs the AWS SAM CLI
 #   4. sam build                → installs prod deps and packages the Lambda
 #   5. sam deploy               → updates the isp-soa-automation stack, passing
 #                                 every Lambda env value as --parameter-overrides
+# - jobs.notify: Telegram success message after a successful deploy.
 
 name: deploy-dev
 
 on:
-  push:
-    branches:
-      - dev
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   actions: read
+  contents: read
 
 concurrency:
   group: deploy-dev
@@ -30,35 +35,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: development
+    # Only deploy when the completed CI run was a successful push to dev.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'dev' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Wait for CI to pass
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          attempts=0
-          while [ $attempts -lt 90 ]; do
-            attempts=$((attempts + 1))
-            run=$(gh run list --workflow CI --commit "$HEAD_SHA" --limit 1 --json status,conclusion --jq '.[0]')
-            status=$(echo "$run" | jq -r '.status')
-            conclusion=$(echo "$run" | jq -r '.conclusion')
-            echo "CI run status: ${status}, conclusion: ${conclusion}"
-            if [ "$status" = "completed" ]; then
-              if [ "$conclusion" = "success" ]; then
-                echo "CI passed — proceeding to deploy."
-                exit 0
-              fi
-              echo "::error::CI failed with conclusion: ${conclusion}. Not deploying."
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "::error::Timed out waiting for CI to finish."
-          exit 1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -101,13 +89,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     needs: deploy
-    if: success()
+    if: needs.deploy.result == 'success'
     steps:
       - name: Send Telegram notification
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
           REPO_NAME: ${{ github.repository }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
