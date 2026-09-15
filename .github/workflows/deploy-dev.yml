@@ -3,14 +3,12 @@
 # Sections:
 # - on: trigger — push to the dev branch, plus manual workflow_dispatch
 # - concurrency: deploy-dev — one deploy at a time; a newer push cancels a pending one
-# - permissions: actions: read — so the guard can watch the CI workflow run
 # - jobs.deploy (environment: development):
 #   1. checkout                 → pulls the pushed commit
-#   2. wait-for-ci              → blocks until the CI workflow on this commit passes
-#   3. configure-aws-cred       → assumes AWS creds into vars.AWS_REGION
-#   4. setup-sam                → installs the AWS SAM CLI
-#   5. sam build                → installs prod deps and packages the Lambda
-#   6. sam deploy               → updates the isp-soa-automation stack, passing
+#   2. configure-aws-cred       → assumes AWS creds into vars.AWS_REGION
+#   3. setup-sam                → installs the AWS SAM CLI
+#   4. sam build                → installs prod deps and packages the Lambda
+#   5. sam deploy               → updates the isp-soa-automation stack, passing
 #                                 every Lambda env value as --parameter-overrides
 
 name: deploy-dev
