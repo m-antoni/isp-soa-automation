@@ -102,7 +102,8 @@ jobs:
           BOT_TOKEN=$(echo "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
           CHAT_ID=$(echo "$TELEGRAM_CHAT_ID" | tr -d '[:space:]')
           TS="$(TZ='Asia/Manila' date +'%m/%d/%Y %I:%M%p')"
-          MSG="Github Action: ci:✅ deploy-dev:✅
+          MSG="Environment: Dev ✅
+          Github Action: [ci] [deploy-dev]
           Author: ${AUTHOR}
           Branch: ${BRANCH}
           Repository: ${REPO_NAME}
