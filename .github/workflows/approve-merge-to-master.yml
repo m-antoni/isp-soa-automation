@@ -11,7 +11,7 @@
 # - jobs.wait-for-approval:  polls getUpdates for a reply newer than notified_at;
 #                            YES → approved=yes, NO → fails, other → bot nudges you
 # - jobs.merge (if 'yes'):   checkouts master, runs npm ci + tests, npm audit,
-#                            then gh pr merge --squash --delete-branch
+#                            then gh pr merge --rebase --delete-branch
 
 name: approve-merge-to-master
 
@@ -136,7 +136,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
           GH_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr merge "$GH_PR_NUMBER" --squash --delete-branch
+          gh pr merge "$GH_PR_NUMBER" --rebase --delete-branch
 
   notify-success:
     runs-on: ubuntu-latest
