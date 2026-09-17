@@ -338,5 +338,3 @@ sam delete --stack-name isp-soa-automation
 
 - **Email:** michaelantoni.tech@gmail.com
 - **LinkedIn:** [https://linkedin.com/in/m-antoni](https://linkedin.com/in/m-antoni)
-
----
