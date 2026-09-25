@@ -284,7 +284,7 @@ hang; the success response is pretty-printed as JSON.
     "s3": "soa/1464602714620/2026-09/SOA-2026-09-30.pdf",
     "file_name": "SOA-2026-09-30.pdf",
     "email_sent_from": "michaelantoni.tech@gmail.com",
-    "email_sent_to": ["michaelantoni.tech@gmail.com", "m.antoni@accenture.com"],
+    "email_sent_to": ["michaelantoni.tech@gmail.com", "m.antoni@company.com"],
     "timestamp": "2026-09-14T07:01:30.292Z"
   }
 }
