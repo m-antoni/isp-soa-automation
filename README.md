@@ -10,15 +10,15 @@ Built with the AWS Serverless Application Model (SAM):
 
 ## Tech Stack
 
-| Technology | Role |
-| ---------- | ---- |
-| **AWS Lambda** | Serverless function (`isp-soa-automation`) that scrapes the Converge portal, unlocks the PDF, and stages it in S3 |
+| Technology             | Role                                                                                                                                |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **AWS Lambda**         | Serverless function (`isp-soa-automation`) that scrapes the Converge portal, unlocks the PDF, and stages it in S3                   |
 | **Amazon EventBridge** | Scheduled event source (`template.yaml`) that invokes the Lambda on the **25th of every month** at 00:00 UTC (`cron(0 0 25 * ? *)`) |
-| **Amazon S3** | Private, SSE-S3-encrypted, versioned bucket for staging SOA PDFs (30-day expiration) |
-| **Node.js 22 (ESM)** | Lambda runtime; `src/` contains the handler, Gmail/OTP client, and pure helpers |
-| **AWS SAM** | Build, package, and deploy the stack via `sam build` / `sam deploy` |
-| **AWS CloudFormation** | Infrastructure-as-code (`template.yaml`) for the Lambda, buckets, permissions, and EventBridge rule |
-| **GitHub Actions** | CI/CD pipeline: quality gates, `deploy-dev`, and the Telegram-approved merge flow to `master` |
+| **Amazon S3**          | Private, SSE-S3-encrypted, versioned bucket for staging SOA PDFs (30-day expiration)                                                |
+| **Node.js 22 (ESM)**   | Lambda runtime; `src/` contains the handler, Gmail/OTP client, and pure helpers                                                     |
+| **AWS SAM**            | Build, package, and deploy the stack via `sam build` / `sam deploy`                                                                 |
+| **AWS CloudFormation** | Infrastructure-as-code (`template.yaml`) for the Lambda, buckets, permissions, and EventBridge rule                                 |
+| **GitHub Actions**     | CI/CD pipeline: quality gates, `deploy-dev`, and the Telegram-approved merge flow to `master`                                       |
 
 **Disclaimer:** This repository is for educational and portfolio demonstration purposes only. It demonstrates serverless architecture, event-driven pipelines, and PDF manipulation on AWS. The author is not affiliated with Converge ICT. Use at your own risk in compliance with the service provider's Terms of Service.
 
@@ -280,7 +280,7 @@ hang; the success response is pretty-printed as JSON.
     "s3": "soa/1464602714620/2026-09/SOA-2026-09-30.pdf",
     "file_name": "SOA-2026-09-30.pdf",
     "email_sent_from": "michaelantoni.tech@gmail.com",
-    "email_sent_to": ["michaelantoni.tech@gmail.com", "m.antoni@accenture.com"],
+    "email_sent_to": ["michaelantoni.tech@gmail.com", "m.antoni@company.com"],
     "timestamp": "2026-09-14T07:01:30.292Z"
   }
 }
